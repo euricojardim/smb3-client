@@ -355,6 +355,10 @@ Client          — public fs-like API
 - **Open** (`src/open/open.ts`) — lifecycle around a single `CREATE`/`CLOSE` pair; sub-modules handle read, write, readdir, streaming, and change notification.
 - **Client** (`src/client.ts`) — facade that lazily connects trees per share and exposes the public API.
 
+## Security
+
+To report a vulnerability, see [SECURITY.md](./SECURITY.md). Do not open a public issue.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).
