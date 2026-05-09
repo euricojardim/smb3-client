@@ -24,7 +24,8 @@ import { encodeSetInfoRequest, encodeFileRenameInformation } from "./wire/struct
 import { InfoType, FileInformationClass } from "./wire/structs/queryInfo.js";
 import { SmbCommand, isSuccess, statusName } from "./wire/commands.js";
 import { SmbError } from "./errors.js";
-import { encodeIoctlRequest, decodeIoctlResponse } from "./wire/structs/ioctl.js";
+import { encodeWriteRequest, decodeWriteResponse } from "./wire/structs/write.js";
+import { encodeReadRequest, decodeReadResponse } from "./wire/structs/read.js";
 import {
   encodeBindRequest,
   encodeRequest as rpcRequest,
@@ -405,28 +406,43 @@ export class Client {
   }
 
   private async _pipeTransceive(open: Open, payload: Buffer): Promise<Buffer> {
-    const FSCTL_PIPE_TRANSCEIVE = 0x0011c017;
-    const body = encodeIoctlRequest({
-      ctlCode: FSCTL_PIPE_TRANSCEIVE,
-      fileId: open.fileId,
-      input: payload,
-      maxOutputResponse: 1024 * 1024,
-      flags: 1, // SMB2_0_IOCTL_IS_FSCTL
-    });
-    const signing = open.tree.session.makeSigning();
-    const resp = await open.tree.conn.send(SmbCommand.IOCTL, body, {
+    // Named-pipe RPC over SMB2: write the request then read the response.
+    // FSCTL_PIPE_TRANSCEIVE requires the client-side pipe to be in message-read
+    // mode, which Windows does not expose via SMB2 CREATE flags; it returns
+    // STATUS_INVALID_PARAMETER when the pipe is in the default byte-stream read
+    // mode. Using SMB2 WRITE + SMB2 READ is the correct approach and matches
+    // what production DCE/RPC clients (impacket, Samba) use over SMB2.
+    const writeBody = encodeWriteRequest({ fileId: open.fileId, offset: 0n, data: payload });
+    const signW = open.tree.session.makeSigning();
+    const writeResp = await open.tree.conn.send(SmbCommand.WRITE, writeBody, {
       sessionId: open.tree.session.sessionId,
       treeId: open.tree.treeId,
-      ...(signing !== undefined ? { signing } : {}),
+      ...(signW !== undefined ? { signing: signW } : {}),
       creditCharge: 1,
     });
-    if (!isSuccess(resp.header.status)) {
+    if (!isSuccess(writeResp.header.status)) {
       throw new SmbError({
-        status: resp.header.status,
-        message: `IOCTL FSCTL_PIPE_TRANSCEIVE failed: ${statusName(resp.header.status)}`,
+        status: writeResp.header.status,
+        message: `pipe WRITE failed: ${statusName(writeResp.header.status)}`,
       });
     }
-    return decodeIoctlResponse(resp.body, 64);
+    decodeWriteResponse(writeResp.body);
+
+    const readBody = encodeReadRequest({ fileId: open.fileId, offset: 0n, length: 65536 });
+    const signR = open.tree.session.makeSigning();
+    const readResp = await open.tree.conn.send(SmbCommand.READ, readBody, {
+      sessionId: open.tree.session.sessionId,
+      treeId: open.tree.treeId,
+      ...(signR !== undefined ? { signing: signR } : {}),
+      creditCharge: 1,
+    });
+    if (!isSuccess(readResp.header.status)) {
+      throw new SmbError({
+        status: readResp.header.status,
+        message: `pipe READ failed: ${statusName(readResp.header.status)}`,
+      });
+    }
+    return decodeReadResponse(readResp.body);
   }
 
   async close(): Promise<void> {
