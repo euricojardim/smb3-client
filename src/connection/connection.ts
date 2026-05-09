@@ -14,6 +14,7 @@ import {
   statusName,
 } from "../wire/commands.js";
 import { encodeNegotiateRequest, decodeNegotiateResponse, NegotiateResponse } from "../wire/structs/negotiate.js";
+import { encodeCancelRequest } from "../wire/structs/cancel.js";
 import { CreditWindow } from "./credits.js";
 import { PreauthHash } from "./preauth.js";
 import { SmbProtocolError } from "../errors.js";
@@ -230,6 +231,25 @@ export class Connection extends EventEmitter {
     for (const p of this.pendingByAsyncId.values()) p.reject(err);
     this.pendingByMessageId.clear();
     this.pendingByAsyncId.clear();
+  }
+
+  cancel(opts: { messageId: bigint; asyncId?: bigint; sessionId?: bigint; treeId?: number }): void {
+    if (this.closed) return;
+    const flags = opts.asyncId !== undefined ? HeaderFlag.ASYNC_COMMAND : 0;
+    const header = encodeHeader({
+      command: SmbCommand.CANCEL,
+      creditCharge: 1,
+      creditRequestResponse: 0,
+      flags,
+      messageId: opts.messageId,
+      sessionId: opts.sessionId ?? 0n,
+      ...(opts.asyncId !== undefined
+        ? { asyncId: opts.asyncId }
+        : { treeId: opts.treeId ?? 0 }),
+      status: 0,
+    });
+    const body = encodeCancelRequest();
+    this.transport.send(makeFrame(Buffer.concat([header, body])));
   }
 
   close(): void {
