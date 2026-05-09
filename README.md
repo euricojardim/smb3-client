@@ -5,6 +5,25 @@
 
 `smb3-client` is a pure-TypeScript SMB 3.x client for Node.js 20+. It speaks [MS-SMB2] directly over TCP/445 — no native bindings, no external runtime dependencies — and exposes a familiar `fs`-like promise API: `readFile`, `writeFile`, `readdir`, `stat`, `mkdir`, and friends. It is aimed at server-side Node applications that need to talk to Windows file shares without mounting a network drive.
 
+## Contents
+
+- [Status](#status)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [API](#api)
+- [Path convention](#path-convention)
+- [Errors](#errors)
+- [Streaming](#streaming)
+- [Watch (CHANGE_NOTIFY)](#watch-change_notify)
+- [Examples](#examples)
+- [Development](#development)
+- [Architecture](#architecture)
+- [Contributing](#contributing)
+- [Security](#security)
+- [License](#license)
+
 ## Status
 
 - 108 unit tests pass.
