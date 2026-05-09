@@ -1,5 +1,5 @@
 // Create a temp dir with three files, list names and Dirent objects, clean up.
-import { loadEnv, connectClient } from "./_common.js";
+import { loadEnv, connectClient, ensureCleanDir, removeDirRecursively } from "./_common.js";
 
 const env = loadEnv();
 const client = await connectClient(env);
@@ -7,14 +7,7 @@ const dir = `${env.share}/__node_smb3_example_listdir`;
 
 try {
   console.log(`setting up ${dir} ...`);
-  try {
-    const existing = await client.readdir(dir) as string[];
-    for (const name of existing) {
-      try { await client.rm(`${dir}/${name}`); } catch { /* ignore */ }
-    }
-    await client.rmdir(dir);
-  } catch { /* may not exist */ }
-  await client.mkdir(dir);
+  await ensureCleanDir(client, dir);
 
   const files = ["a.txt", "b.txt", "c.txt"];
   for (const f of files) {
@@ -40,10 +33,7 @@ try {
   }
 
   console.log("cleaning up ...");
-  for (const f of files) {
-    await client.rm(`${dir}/${f}`);
-  }
-  await client.rmdir(dir);
+  await removeDirRecursively(client, dir);
 } finally {
   await client.close();
 }

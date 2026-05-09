@@ -1,5 +1,5 @@
 // Stream a 4 MiB random buffer up via pipeline, stream it back, SHA-256 verify.
-import { loadEnv, connectClient } from "./_common.js";
+import { loadEnv, connectClient, ensureCleanDir, removeDirRecursively } from "./_common.js";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { randomBytes, createHash } from "node:crypto";
@@ -7,12 +7,11 @@ import { randomBytes, createHash } from "node:crypto";
 const env = loadEnv();
 const client = await connectClient(env);
 const dir = `${env.share}/__node_smb3_example_streams`;
-const path = `${dir}/big.bin`;
+const path = `${dir}/big.iso`;
 
 try {
   console.log(`setting up ${dir} ...`);
-  try { await client.rmdir(dir); } catch { /* may not exist */ }
-  await client.mkdir(dir);
+  await ensureCleanDir(client, dir);
 
   const SIZE = 4 * 1024 * 1024;
   const data = randomBytes(SIZE);
@@ -45,8 +44,7 @@ try {
   console.log("SHA-256 verified");
 
   console.log("cleaning up ...");
-  await client.rm(path);
-  await client.rmdir(dir);
+  await removeDirRecursively(client, dir);
 } finally {
   await client.close();
 }

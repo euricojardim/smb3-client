@@ -1,5 +1,5 @@
 // Write a 64 KiB random buffer, read it back, verify via SHA-256.
-import { loadEnv, connectClient } from "./_common.js";
+import { loadEnv, connectClient, ensureCleanDir, removeDirRecursively } from "./_common.js";
 import { randomBytes, createHash } from "node:crypto";
 
 const env = loadEnv();
@@ -9,8 +9,7 @@ const path = `${dir}/random64k.bin`;
 
 try {
   console.log(`setting up ${dir} ...`);
-  try { await client.rmdir(dir); } catch { /* may not exist */ }
-  await client.mkdir(dir);
+  await ensureCleanDir(client, dir);
 
   const SIZE = 64 * 1024;
   const data = randomBytes(SIZE);
@@ -34,8 +33,7 @@ try {
   console.log(`SHA-256 verified: ${gotHash}`);
 
   console.log("cleaning up ...");
-  await client.rm(path);
-  await client.rmdir(dir);
+  await removeDirRecursively(client, dir);
 } finally {
   await client.close();
 }

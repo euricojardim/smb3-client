@@ -1,15 +1,14 @@
 // Write a known string to a temp file, read it back, assert byte equality.
-import { loadEnv, connectClient } from "./_common.js";
+import { loadEnv, connectClient, ensureCleanDir, removeDirRecursively } from "./_common.js";
 
 const env = loadEnv();
 const client = await connectClient(env);
 const dir = `${env.share}/__node_smb3_example_readfile`;
-const path = `${dir}/hello.txt`;
+const path = `${dir}/big.iso`;
 
 try {
   console.log(`setting up ${dir} ...`);
-  try { await client.rmdir(dir); } catch { /* may not exist */ }
-  await client.mkdir(dir);
+  await ensureCleanDir(client, dir);
 
   const original = Buffer.from("hello from node-smb3", "utf8");
   console.log(`writing ${original.length} bytes to ${path} ...`);
@@ -34,8 +33,7 @@ try {
   console.log(`encoding overload OK: "${text}"`);
 
   console.log("cleaning up ...");
-  await client.rm(path);
-  await client.rmdir(dir);
+  await removeDirRecursively(client, dir);
 } finally {
   await client.close();
 }

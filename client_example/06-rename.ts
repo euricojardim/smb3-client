@@ -1,5 +1,5 @@
 // Create a file, rename it, verify old name is gone and new name appears.
-import { loadEnv, connectClient } from "./_common.js";
+import { loadEnv, connectClient, ensureCleanDir, removeDirRecursively } from "./_common.js";
 
 const env = loadEnv();
 const client = await connectClient(env);
@@ -9,8 +9,7 @@ const after = `${dir}/renamed.txt`;
 
 try {
   console.log(`setting up ${dir} ...`);
-  try { await client.rmdir(dir); } catch { /* may not exist */ }
-  await client.mkdir(dir);
+  await ensureCleanDir(client, dir);
 
   console.log(`writing ${before} ...`);
   await client.writeFile(before, Buffer.from("rename test"));
@@ -31,8 +30,7 @@ try {
   console.log("assertions passed");
 
   console.log("cleaning up ...");
-  await client.rm(after);
-  await client.rmdir(dir);
+  await removeDirRecursively(client, dir);
 } finally {
   await client.close();
 }

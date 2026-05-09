@@ -53,3 +53,50 @@ export async function connectClient(env: Env, opts?: Partial<ClientOptions>): Pr
   await client.connect();
   return client;
 }
+
+/**
+ * Best-effort recursive removal of a directory and everything inside it.
+ * Silently swallows "not found" errors so it's safe to call before mkdir
+ * and again on cleanup. Useful because Client.rmdir is non-recursive and
+ * fails with ENOTEMPTY if leftover files (or files dropped in by another
+ * client like Windows Explorer) are still in the dir.
+ */
+export async function removeDirRecursively(client: Client, dir: string): Promise<void> {
+  let entries: string[];
+  try {
+    entries = (await client.readdir(dir)) as string[];
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "ENOENT") return;
+    throw err;
+  }
+
+  for (const name of entries) {
+    const child = `${dir}/${name}`;
+    try {
+      await client.rm(child);
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "EISDIR" || code === "EACCES") {
+        await removeDirRecursively(client, child);
+      } else if (code !== "ENOENT") {
+        throw err;
+      }
+    }
+  }
+
+  try {
+    await client.rmdir(dir);
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code !== "ENOENT") throw err;
+  }
+}
+
+/**
+ * Clears the directory if present, then creates it fresh.
+ */
+export async function ensureCleanDir(client: Client, dir: string): Promise<void> {
+  await removeDirRecursively(client, dir);
+  await client.mkdir(dir);
+}

@@ -1,5 +1,5 @@
 // Create a directory, confirm it appears in the parent listing, then remove it.
-import { loadEnv, connectClient } from "./_common.js";
+import { loadEnv, connectClient, ensureCleanDir, removeDirRecursively } from "./_common.js";
 
 const env = loadEnv();
 const client = await connectClient(env);
@@ -9,8 +9,7 @@ const sub = `${base}/newdir`;
 try {
   // Ensure the base working directory exists.
   console.log(`setting up ${base} ...`);
-  try { await client.rmdir(base); } catch { /* may not exist */ }
-  await client.mkdir(base);
+  await ensureCleanDir(client, base);
 
   console.log(`creating ${sub} ...`);
   await client.mkdir(sub);
@@ -33,7 +32,7 @@ try {
   console.log("assertions passed");
 
   console.log("cleaning up base dir ...");
-  await client.rmdir(base);
+  await removeDirRecursively(client, base);
 } finally {
   await client.close();
 }

@@ -1,5 +1,5 @@
 // Create a temp file, stat it to inspect metadata, then clean up.
-import { loadEnv, connectClient } from "./_common.js";
+import { loadEnv, connectClient, ensureCleanDir, removeDirRecursively } from "./_common.js";
 
 const env = loadEnv();
 const client = await connectClient(env);
@@ -8,8 +8,7 @@ const dir = `${env.share}/__node_smb3_example_stat`;
 
 try {
   console.log(`setting up working directory ${dir} ...`);
-  try { await client.rmdir(dir); } catch { /* may not exist */ }
-  await client.mkdir(dir);
+  await ensureCleanDir(client, dir);
 
   const content = Buffer.from("stat probe content", "utf8");
   console.log(`writing ${path} ...`);
@@ -37,8 +36,7 @@ try {
   console.log("assertions passed");
 
   console.log("cleaning up ...");
-  await client.rm(path);
-  await client.rmdir(dir);
+  await removeDirRecursively(client, dir);
 } finally {
   await client.close();
 }
