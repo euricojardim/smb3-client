@@ -61,6 +61,7 @@ export class Connection extends EventEmitter {
   private preauth = new PreauthHash();
   private negotiated: NegotiatedConnection | null = null;
   private closed = false;
+  private verifier: ((frame: Buffer, sig: Buffer) => boolean) | null = null;
 
   constructor(private readonly transport: Transport) {
     super();
@@ -172,6 +173,10 @@ export class Connection extends EventEmitter {
     return this.preauth.digest();
   }
 
+  setVerifier(fn: (frame: Buffer, sig: Buffer) => boolean): void {
+    this.verifier = fn;
+  }
+
   private onMessage(msg: Buffer): void {
     let parsed: ReturnType<typeof decodeHeader>;
     try {
@@ -182,6 +187,18 @@ export class Connection extends EventEmitter {
     }
     const { header } = parsed;
     const body = Buffer.from(msg.subarray(SMB2_HEADER_SIZE));
+
+    // Verify signature on signed responses when a verifier is registered.
+    if ((header.flags & HeaderFlag.SIGNED) !== 0 && this.verifier !== null) {
+      const working = Buffer.from(msg);
+      working.fill(0, 48, 64); // zero the Signature field before computing
+      const sig = header.signature ?? Buffer.alloc(16);
+      if (!this.verifier(working, sig)) {
+        this.fail(new SmbProtocolError({ status: 0, message: "signature verify failed" }));
+        return;
+      }
+    }
+
     // Replenish credits.
     this.credits.release(header.creditRequestResponse);
     // Pre-auth hash update for NEGOTIATE/SESSION_SETUP responses.

@@ -14,7 +14,7 @@ import { kdfSp800108CounterHmacSha256 } from "./keys.js";
 import { encodeSessionSetupRequest, decodeSessionSetupResponse } from "../wire/structs/sessionSetup.js";
 import { SmbCommand, NTStatus, Dialect, SecurityMode, isSuccess } from "../wire/commands.js";
 import { SmbAuthError } from "../errors.js";
-import { sign } from "../connection/signing.js";
+import { sign, verify } from "../connection/signing.js";
 
 export interface SessionCreds {
   username: string;
@@ -134,6 +134,10 @@ export class Session {
     } else {
       throw new SmbAuthError({ status: 0, message: `unsupported dialect ${dialect.toString(16)}` });
     }
+
+    // Register the verifier on the connection so every subsequent signed response is checked.
+    const signingKey = this.signingKey!;
+    this.conn.setVerifier((frame, sig) => verify(frame, sig, signingKey, dialect));
   }
 
   async close(): Promise<void> {
