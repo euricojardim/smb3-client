@@ -126,7 +126,7 @@ export class Connection extends EventEmitter {
     const flags = opts.flags ?? 0;
     let header = encodeHeader({
       command,
-      creditCharge: Math.max(charge, 1),
+      creditCharge: charge,
       creditRequestResponse: 1,
       flags,
       messageId,
@@ -140,7 +140,7 @@ export class Connection extends EventEmitter {
       const signedFlags = flags | HeaderFlag.SIGNED;
       header = encodeHeader({
         command,
-        creditCharge: Math.max(charge, 1),
+        creditCharge: charge,
         creditRequestResponse: 1,
         flags: signedFlags,
         messageId,

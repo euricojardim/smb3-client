@@ -31,7 +31,7 @@ export function encodeNegotiateRequest(req: NegotiateRequest): Buffer {
     // adds 64 (header). We compute it relative to body and patch at the end.
     const ctxOffsetPatchAt = w.offset;
     w.u32(0);
-    w.u16(2); // contexts: preauth + encryption(none)
+    w.u16(1); // contexts: preauth only (no encryption)
     w.u16(0); // Reserved2
 
     // Dialects list (2 * count)
@@ -56,13 +56,6 @@ export function encodeNegotiateRequest(req: NegotiateRequest): Buffer {
     ctx.u16(32); // SaltLength
     ctx.u16(1); // SHA-512
     ctx.bytes(req.preauthSalt!);
-    ctx.padTo(8);
-
-    // EncryptionCapabilities context: advertise zero ciphers (we don't support encryption)
-    ctx.u16(NegotiateContextType.ENCRYPTION_CAPABILITIES);
-    ctx.u16(2); // DataLength: just CipherCount(2)
-    ctx.u32(0); // Reserved
-    ctx.u16(0); // CipherCount = 0
     ctx.padTo(8);
 
     return Buffer.concat([buf, ctx.buffer()]);

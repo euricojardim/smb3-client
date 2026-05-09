@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { encodeNegotiateRequest } from "../../../../src/wire/structs/negotiate.js";
-import { Dialect, SecurityMode, Capability } from "../../../../src/wire/commands.js";
+import { Dialect, SecurityMode, Capability, NegotiateContextType } from "../../../../src/wire/commands.js";
 
 describe("encodeNegotiateRequest", () => {
   it("encodes structure size 36 and dialect count", () => {
@@ -17,7 +17,7 @@ describe("encodeNegotiateRequest", () => {
     expect(buf.readUInt32LE(8)).toBe(Capability.LARGE_MTU);
   });
 
-  it("includes preauth integrity context when 3.1.1 in dialects", () => {
+  it("includes only preauth integrity context (no EncryptionCapabilities) when 3.1.1 in dialects", () => {
     const buf = encodeNegotiateRequest({
       dialects: [Dialect.SMB_3_1_1],
       clientGuid: Buffer.alloc(16, 0),
@@ -28,8 +28,13 @@ describe("encodeNegotiateRequest", () => {
     // NegotiateContextOffset and Count present at offset 28..32, 32..34
     const ctxOffset = buf.readUInt32LE(28);
     const ctxCount = buf.readUInt16LE(32);
-    expect(ctxCount).toBeGreaterThanOrEqual(2); // preauth + encryption (we advertise no ciphers)
+    expect(ctxCount).toBe(1); // preauth only — no EncryptionCapabilities with zero ciphers
     expect(ctxOffset).toBeGreaterThanOrEqual(36);
+
+    // Verify the single context is PreauthIntegrity
+    const ctxBodyOffset = ctxOffset - 64; // body-relative offset
+    const ctxType = buf.readUInt16LE(ctxBodyOffset);
+    expect(ctxType).toBe(NegotiateContextType.PREAUTH_INTEGRITY_CAPABILITIES);
   });
 
   it("omits preauth context when 3.1.1 not advertised", () => {
