@@ -1,0 +1,32 @@
+import type { Open } from "./open.js";
+import { encodeWriteRequest, decodeWriteResponse } from "../wire/structs/write.js";
+import { SmbCommand, isSuccess, statusName } from "../wire/commands.js";
+import { SmbError } from "../errors.js";
+
+export async function writeAll(open: Open, offset: bigint, data: Buffer): Promise<void> {
+  const max = open.tree.conn.state?.maxWriteSize ?? 65536;
+  const chunkSize = Math.min(max, 1 << 20);
+  let written = 0;
+  while (written < data.length) {
+    const chunk = data.subarray(written, written + Math.min(chunkSize, data.length - written));
+    const charge = Math.max(1, Math.ceil(chunk.length / 65536));
+    const body = encodeWriteRequest({
+      fileId: open.fileId,
+      offset: offset + BigInt(written),
+      data: Buffer.from(chunk),
+    });
+    const signing = open.tree.session.makeSigning();
+    const resp = await open.tree.conn.send(SmbCommand.WRITE, body, {
+      sessionId: open.tree.session.sessionId,
+      treeId: open.tree.treeId,
+      ...(signing !== undefined ? { signing } : {}),
+      creditCharge: charge,
+    });
+    if (!isSuccess(resp.header.status)) {
+      throw new SmbError({ status: resp.header.status, message: `WRITE failed: ${statusName(resp.header.status)}` });
+    }
+    const count = decodeWriteResponse(resp.body);
+    if (count <= 0) throw new Error("WRITE returned zero count");
+    written += count;
+  }
+}
