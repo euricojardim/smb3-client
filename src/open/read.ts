@@ -7,7 +7,9 @@ const DEFAULT_CHUNK = 1 << 16; // 64 KiB
 
 export async function readAll(open: Open, length: bigint): Promise<Buffer> {
   const max = open.tree.conn.state?.maxReadSize ?? DEFAULT_CHUNK;
-  const chunkSize = Math.min(max, 1 << 20); // cap at 1 MiB chunks for simplicity
+  // Cap at 65536 so that creditCharge is always 1, keeping the credit window
+  // from stalling (the client starts with only a handful of credits).
+  const chunkSize = Math.min(max, DEFAULT_CHUNK);
   const out: Buffer[] = [];
   let offset = 0n;
   let remaining = length;
@@ -23,8 +25,12 @@ export async function readAll(open: Open, length: bigint): Promise<Buffer> {
 }
 
 export async function readAt(open: Open, offset: bigint, length: number): Promise<Buffer> {
-  const charge = Math.max(1, Math.ceil(length / 65536));
-  const body = encodeReadRequest({ fileId: open.fileId, offset, length });
+  // Issue one SMB2 READ of at most DEFAULT_CHUNK bytes (creditCharge = 1)
+  // so the credit window never stalls.  If the caller requests more than
+  // DEFAULT_CHUNK bytes, loop in sub-chunks and concatenate the result.
+  const safeLength = Math.min(length, DEFAULT_CHUNK);
+  const charge = 1; // safeLength <= 65536, so creditCharge is always 1
+  const body = encodeReadRequest({ fileId: open.fileId, offset, length: safeLength });
   const signing = open.tree.session.makeSigning();
   const resp = await open.tree.conn.send(SmbCommand.READ, body, {
     sessionId: open.tree.session.sessionId,
@@ -36,5 +42,11 @@ export async function readAt(open: Open, offset: bigint, length: number): Promis
   if (!isSuccess(resp.header.status)) {
     throw new SmbError({ status: resp.header.status, message: `READ failed: ${statusName(resp.header.status)}` });
   }
-  return decodeReadResponse(resp.body, 64);
+  const first = decodeReadResponse(resp.body, 64);
+  if (first.length === 0 || safeLength >= length) return first;
+
+  // Caller asked for more than one sub-chunk — read the remainder recursively.
+  const rest = await readAt(open, offset + BigInt(first.length), length - first.length);
+  if (rest.length === 0) return first;
+  return Buffer.concat([first, rest]);
 }

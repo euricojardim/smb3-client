@@ -4,8 +4,11 @@ import { SmbCommand, isSuccess, statusName } from "../wire/commands.js";
 import { SmbError } from "../errors.js";
 
 export async function writeAll(open: Open, offset: bigint, data: Buffer): Promise<void> {
+  // Cap at 65536 so that creditCharge is always 1, keeping the credit window
+  // from stalling (the client starts with only a handful of credits and the
+  // server grants exactly creditRequestResponse=1 credit per response).
   const max = open.tree.conn.state?.maxWriteSize ?? 65536;
-  const chunkSize = Math.min(max, 1 << 20);
+  const chunkSize = Math.min(max, 65536);
   let written = 0;
   while (written < data.length) {
     const chunk = data.subarray(written, written + Math.min(chunkSize, data.length - written));

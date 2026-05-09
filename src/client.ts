@@ -1,4 +1,4 @@
-import { Readable, Writable } from "node:stream";
+import { Readable, Writable, PassThrough } from "node:stream";
 import { TcpTransport } from "./transport/socket.js";
 import { Connection } from "./connection/connection.js";
 import { Session } from "./session/session.js";
@@ -244,12 +244,24 @@ export class Client {
   }
 
   createReadStream(path: string): Readable {
-    const out = new Readable({ read() {} });
-    void this._beginReadStream(path, out);
+    const out = new PassThrough();
+
+    void this._beginReadStream(path, {
+      onReady: (inner) => {
+        inner.pipe(out);
+        inner.on("error", (e) => out.destroy(e));
+        out.on("close", () => inner.destroy());
+      },
+      onError: (err) => { out.destroy(err); },
+    });
+
     return out;
   }
 
-  private async _beginReadStream(path: string, out: Readable): Promise<void> {
+  private async _beginReadStream(
+    path: string,
+    cbs: { onReady: (s: Readable) => void; onError: (err: Error) => void },
+  ): Promise<void> {
     try {
       const { share, rest } = splitSharePath(path);
       const tree = await this.treeFor(share);
@@ -262,30 +274,81 @@ export class Client {
         fileAttributes: 0,
       });
       const inner = openCreateReadStream(open);
-      inner.on("data", (chunk) => { if (!out.push(chunk)) inner.pause(); });
-      out.on("drain" as never, () => inner.resume());
-      inner.on("end", async () => { try { await open.close(); } catch { /* ignore */ } out.push(null); });
-      inner.on("error", (e) => { open.close().catch(() => undefined); out.destroy(e); });
-      out.on("close", () => inner.destroy());
+      inner.on("end", async () => { try { await open.close(); } catch { /* ignore */ } });
+      inner.on("error", () => { open.close().catch(() => undefined); });
+      cbs.onReady(inner);
     } catch (err) {
-      out.destroy(err as Error);
+      cbs.onError(err as Error);
     }
   }
 
   createWriteStream(path: string): Writable {
+    type PendingWrite = { chunk: Buffer; cb: (err?: Error) => void };
+    let inner: Writable | null = null;
+    let connectError: Error | null = null;
+    const pending: PendingWrite[] = [];
+    let pendingFinal: ((err?: Error) => void) | null = null;
+
     const proxy = new Writable({
       write(chunk, _enc, cb) {
-        this.emit("__chunk" as never, chunk, cb);
+        if (connectError) { cb(connectError); return; }
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Buffer);
+        if (inner) {
+          inner.write(buf, (err) => cb(err ?? undefined));
+        } else {
+          pending.push({ chunk: buf, cb });
+        }
       },
       final(cb) {
-        this.emit("__final" as never, cb);
+        if (connectError) { cb(connectError); return; }
+        if (inner) inner.end(() => cb());
+        else pendingFinal = cb;
+      },
+      destroy(err, cb) {
+        if (inner) inner.destroy(err ?? undefined);
+        cb(err);
       },
     });
-    void this._beginWriteStream(path, proxy);
+
+    void this._beginWriteStream(path, {
+      onReady: (i) => {
+        inner = i;
+        // Drain pending writes in order, then handle pendingFinal
+        let chain: Promise<void> = Promise.resolve();
+        for (const { chunk, cb } of pending) {
+          chain = chain.then(
+            () => new Promise<void>((resolve) => {
+              i.write(chunk, (err) => { cb(err ?? undefined); resolve(); });
+            }),
+          );
+        }
+        pending.length = 0;
+        chain.then(() => {
+          if (pendingFinal) {
+            const cb = pendingFinal;
+            pendingFinal = null;
+            i.end(() => cb());
+          }
+        }).catch((err: Error) => proxy.destroy(err));
+        i.on("error", (e) => proxy.destroy(e));
+      },
+      onError: (err) => {
+        connectError = err;
+        for (const p of pending) p.cb(err);
+        pending.length = 0;
+        if (pendingFinal) pendingFinal(err);
+        pendingFinal = null;
+        proxy.destroy(err);
+      },
+    });
+
     return proxy;
   }
 
-  private async _beginWriteStream(path: string, proxy: Writable): Promise<void> {
+  private async _beginWriteStream(
+    path: string,
+    cbs: { onReady: (s: Writable) => void; onError: (err: Error) => void },
+  ): Promise<void> {
     try {
       const { share, rest } = splitSharePath(path);
       const tree = await this.treeFor(share);
@@ -297,16 +360,9 @@ export class Client {
         createOptions: CreateOptions.NON_DIRECTORY_FILE,
         fileAttributes: 0,
       });
-      const inner = openCreateWriteStream(open);
-      proxy.on("__chunk" as never, (chunk: Buffer, cb: (err?: Error) => void) => {
-        inner.write(chunk, (err) => cb(err ?? undefined));
-      });
-      proxy.on("__final" as never, (cb: (err?: Error) => void) => {
-        inner.end(() => cb());
-      });
-      inner.on("error", (e) => proxy.destroy(e));
+      cbs.onReady(openCreateWriteStream(open));
     } catch (err) {
-      proxy.destroy(err as Error);
+      cbs.onError(err as Error);
     }
   }
 

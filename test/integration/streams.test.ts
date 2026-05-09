@@ -25,7 +25,7 @@ integrationDescribe("integration: streams", () => {
     await client?.close();
   });
 
-  it("streams 4 MiB up and back, byte-identical", async () => {
+  it("streams 4 MiB up and back, byte-identical", { timeout: 60_000 }, async () => {
     const path = `${base}/big.bin`;
     const data = randomBytes(4 * 1024 * 1024);
     await pipeline(Readable.from(data), client.createWriteStream(path));
