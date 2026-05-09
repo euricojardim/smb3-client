@@ -65,3 +65,62 @@ export class Reader {
     return this.buf;
   }
 }
+
+export class Writer {
+  private chunks: Buffer[] = [];
+  private len = 0;
+
+  get offset(): number {
+    return this.len;
+  }
+
+  private push(b: Buffer): void {
+    this.chunks.push(b);
+    this.len += b.length;
+  }
+
+  u8(v: number): void {
+    const b = Buffer.alloc(1);
+    b.writeUInt8(v & 0xff, 0);
+    this.push(b);
+  }
+
+  u16(v: number): void {
+    const b = Buffer.alloc(2);
+    b.writeUInt16LE(v & 0xffff, 0);
+    this.push(b);
+  }
+
+  u32(v: number): void {
+    const b = Buffer.alloc(4);
+    b.writeUInt32LE(v >>> 0, 0);
+    this.push(b);
+  }
+
+  u64(v: bigint): void {
+    const b = Buffer.alloc(8);
+    b.writeBigUInt64LE(v, 0);
+    this.push(b);
+  }
+
+  bytes(b: Buffer): void {
+    this.push(Buffer.from(b));
+  }
+
+  utf16(s: string): void {
+    this.push(Buffer.from(s, "utf16le"));
+  }
+
+  pad(n: number): void {
+    if (n > 0) this.push(Buffer.alloc(n));
+  }
+
+  padTo(boundary: number): void {
+    const rem = this.len % boundary;
+    if (rem !== 0) this.pad(boundary - rem);
+  }
+
+  buffer(): Buffer {
+    return Buffer.concat(this.chunks, this.len);
+  }
+}
