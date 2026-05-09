@@ -4,6 +4,7 @@ import { Session } from "./session/session.js";
 import { Tree } from "./tree/tree.js";
 import { Open } from "./open/open.js";
 import { readAll } from "./open/read.js";
+import { writeAll } from "./open/write.js";
 import { metaToStat } from "./open/query.js";
 import {
   CreateDisposition,
@@ -64,6 +65,20 @@ export class Client {
       const buf = await readAll(open, open.meta.endOfFile);
       return encoding ? buf.toString(encoding) : buf;
     });
+  }
+
+  async writeFile(path: string, data: Buffer | string, encoding: BufferEncoding = "utf8"): Promise<void> {
+    const buf = typeof data === "string" ? Buffer.from(data, encoding) : data;
+    const { share, rest } = splitSharePath(path);
+    const tree = await this.treeFor(share);
+    await Open.withOpen(tree, {
+      filename: toSmbPath(rest),
+      desiredAccess: FileAccess.GENERIC_WRITE | FileAccess.FILE_READ_ATTRIBUTES,
+      shareAccess: ShareAccess.READ | ShareAccess.WRITE | ShareAccess.DELETE,
+      createDisposition: CreateDisposition.OVERWRITE_IF,
+      createOptions: CreateOptions.NON_DIRECTORY_FILE,
+      fileAttributes: 0,
+    }, async (open) => writeAll(open, 0n, buf));
   }
 
   async stat(path: string): Promise<FileStat> {
