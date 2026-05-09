@@ -18,6 +18,14 @@
   "type": "module",
   "license": "MIT",
   "author": "Eurico Jardim <euricojardim@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/euricojardim/smb3-client.git"
+  },
+  "homepage": "https://github.com/euricojardim/smb3-client#readme",
+  "bugs": {
+    "url": "https://github.com/euricojardim/smb3-client/issues"
+  },
   "engines": { "node": ">=20" },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

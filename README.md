@@ -286,7 +286,7 @@ Pass `recursive: true` to watch subdirectories as well (subject to server suppor
 
 ## Examples
 
-The `client_example/` directory contains ten runnable scripts. See [`client_example/README.md`](./client_example/README.md) for full details.
+The `client_example/` directory contains ten runnable scripts. See [`client_example/README.md`](https://github.com/euricojardim/smb3-client/blob/main/client_example/README.md) for full details.
 
 | Script | Description |
 |---|---|
@@ -333,7 +333,7 @@ npm run build             # compile to dist/
 
 Integration tests are skipped automatically when the env vars are absent.
 
-Design specification: [`docs/superpowers/specs/2026-05-09-node-smb3-client-design.md`](./docs/superpowers/specs/2026-05-09-node-smb3-client-design.md).
+Design specification: [`docs/superpowers/specs/2026-05-09-node-smb3-client-design.md`](https://github.com/euricojardim/smb3-client/blob/main/docs/superpowers/specs/2026-05-09-node-smb3-client-design.md).
 
 ## Architecture
 
@@ -357,12 +357,12 @@ Client          — public fs-like API
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for
+Contributions are welcome. See [CONTRIBUTING.md](https://github.com/euricojardim/smb3-client/blob/main/CONTRIBUTING.md) for
 development setup, coding conventions, and the PR checklist.
 
 ## Security
 
-To report a vulnerability, see [SECURITY.md](./SECURITY.md). Do not open a public issue.
+To report a vulnerability, see [SECURITY.md](https://github.com/euricojardim/smb3-client/blob/main/SECURITY.md). Do not open a public issue.
 
 ## License
 
