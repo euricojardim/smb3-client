@@ -6,14 +6,16 @@ import { Open } from "./open/open.js";
 import { readAll } from "./open/read.js";
 import { writeAll } from "./open/write.js";
 import { metaToStat } from "./open/query.js";
+import { readdirAll } from "./open/readdir.js";
 import {
   CreateDisposition,
   CreateOptions,
   FileAccess,
+  FileAttribute,
   ShareAccess,
 } from "./wire/structs/create.js";
 import { splitSharePath, toSmbPath } from "./paths.js";
-import type { ClientOptions, FileStat } from "./types.js";
+import type { ClientOptions, Dirent, FileStat } from "./types.js";
 
 export class Client {
   private conn: Connection | null = null;
@@ -79,6 +81,32 @@ export class Client {
       createOptions: CreateOptions.NON_DIRECTORY_FILE,
       fileAttributes: 0,
     }, async (open) => writeAll(open, 0n, buf));
+  }
+
+  async readdir(path: string): Promise<string[]>;
+  async readdir(path: string, opts: { withFileTypes: true }): Promise<Dirent[]>;
+  async readdir(path: string, opts?: { withFileTypes?: boolean }): Promise<string[] | Dirent[]> {
+    const { share, rest } = splitSharePath(path);
+    const tree = await this.treeFor(share);
+    return Open.withOpen(tree, {
+      filename: toSmbPath(rest),
+      desiredAccess: FileAccess.FILE_READ_DATA | FileAccess.FILE_READ_ATTRIBUTES,
+      shareAccess: ShareAccess.READ | ShareAccess.WRITE | ShareAccess.DELETE,
+      createDisposition: CreateDisposition.OPEN,
+      createOptions: 1, // DIRECTORY_FILE
+      fileAttributes: 0,
+    }, async (open) => {
+      const entries = await readdirAll(open);
+      if (!opts?.withFileTypes) return entries.map((e) => e.fileName);
+      return entries.map((e) => {
+        const isDir = (e.fileAttributes & FileAttribute.DIRECTORY) !== 0;
+        return {
+          name: e.fileName,
+          isFile: () => !isDir,
+          isDirectory: () => isDir,
+        } satisfies Dirent;
+      });
+    });
   }
 
   async stat(path: string): Promise<FileStat> {
