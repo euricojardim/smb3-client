@@ -58,6 +58,8 @@ export class Connection extends EventEmitter {
   private nextMessageId: bigint = 0n;
   private pendingByMessageId = new Map<string, PendingRequest>();
   private pendingByAsyncId = new Map<string, PendingRequest>();
+  /** Tracks the asyncId assigned by the server for pending async requests, keyed by messageId string. */
+  private asyncIdByMessageId = new Map<string, bigint>();
   private credits = new CreditWindow(1);
   private preauth = new PreauthHash();
   private negotiated: NegotiatedConnection | null = null;
@@ -221,9 +223,12 @@ export class Connection extends EventEmitter {
     if (!pending) {
       // Could be a pure ASYNC final response keyed by AsyncId.
       if (header.asyncId !== undefined) {
-        const a = this.pendingByAsyncId.get(header.asyncId.toString());
+        const asyncKey = header.asyncId.toString();
+        const a = this.pendingByAsyncId.get(asyncKey);
         if (a) {
-          this.pendingByAsyncId.delete(header.asyncId.toString());
+          this.pendingByAsyncId.delete(asyncKey);
+          // Clean up the reverse mapping.
+          this.asyncIdByMessageId.delete(messageKey);
           a.resolve({ header, body });
           return;
         }
@@ -234,7 +239,9 @@ export class Connection extends EventEmitter {
 
     if (isPending(header.status) && header.asyncId !== undefined) {
       // Interim response: keep the pending entry alive but key by AsyncId for the final.
+      // Also record the messageId→asyncId mapping so cancel() can send the correct CANCEL frame.
       this.pendingByAsyncId.set(header.asyncId.toString(), pending);
+      this.asyncIdByMessageId.set(messageKey, header.asyncId);
       this.pendingByMessageId.delete(messageKey);
       return;
     }
@@ -258,11 +265,16 @@ export class Connection extends EventEmitter {
     for (const p of this.pendingByAsyncId.values()) p.reject(err);
     this.pendingByMessageId.clear();
     this.pendingByAsyncId.clear();
+    this.asyncIdByMessageId.clear();
   }
 
   cancel(opts: { messageId: bigint; asyncId?: bigint; sessionId?: bigint; treeId?: number }): void {
     if (this.closed) return;
-    const flags = opts.asyncId !== undefined ? HeaderFlag.ASYNC_COMMAND : 0;
+    // If the request has been promoted to async (STATUS_PENDING received), the server
+    // requires the CANCEL to carry the ASYNC_COMMAND flag and the assigned AsyncId.
+    // Look up the asyncId from our tracking map if the caller did not provide one.
+    const asyncId = opts.asyncId ?? this.asyncIdByMessageId.get(opts.messageId.toString());
+    const flags = asyncId !== undefined ? HeaderFlag.ASYNC_COMMAND : 0;
     const header = encodeHeader({
       command: SmbCommand.CANCEL,
       creditCharge: 1,
@@ -270,8 +282,8 @@ export class Connection extends EventEmitter {
       flags,
       messageId: opts.messageId,
       sessionId: opts.sessionId ?? 0n,
-      ...(opts.asyncId !== undefined
-        ? { asyncId: opts.asyncId }
+      ...(asyncId !== undefined
+        ? { asyncId }
         : { treeId: opts.treeId ?? 0 }),
       status: 0,
     });

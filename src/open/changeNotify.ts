@@ -47,7 +47,13 @@ export async function* watchOpen(open: Open, opts: WatchOptions = {}): AsyncGene
     if (opts.signal.aborted) return;
     opts.signal.addEventListener("abort", () => {
       aborted = true;
-      if (lastMessageId !== null) conn.cancel({ messageId: lastMessageId });
+      if (lastMessageId !== null) {
+        conn.cancel({
+          messageId: lastMessageId,
+          sessionId: open.tree.session.sessionId,
+          treeId: open.tree.treeId,
+        });
+      }
     }, { once: true });
   }
 

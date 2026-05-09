@@ -14,10 +14,24 @@ integrationDescribe("integration: watch", () => {
       username: env.username, password: env.password,
     });
     await client.connect();
-    try { await client.rmdir(base); } catch { /* ignore */ }
+    // Best-effort cleanup: remove any files left by a previous run, then rmdir.
+    try {
+      const entries = await client.readdir(base) as string[];
+      for (const e of entries) {
+        try { await client.rm(`${base}/${e}`); } catch { /* ignore */ }
+      }
+      await client.rmdir(base);
+    } catch { /* ignore — dir may not exist */ }
     await client.mkdir(base);
   });
   afterAll(async () => {
+    // Best-effort cleanup: remove any files left by the test, then rmdir.
+    try {
+      const entries = await client.readdir(base) as string[];
+      for (const e of entries) {
+        try { await client.rm(`${base}/${e}`); } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
     try { await client.rmdir(base); } catch { /* ignore */ }
     await client?.close();
   });
