@@ -10,6 +10,7 @@ import { metaToStat } from "./open/query.js";
 import { readdirAll } from "./open/readdir.js";
 import { createReadStream as openCreateReadStream } from "./open/readStream.js";
 import { createWriteStream as openCreateWriteStream } from "./open/writeStream.js";
+import { watchOpen } from "./open/changeNotify.js";
 import {
   CreateDisposition,
   CreateOptions,
@@ -18,7 +19,7 @@ import {
   ShareAccess,
 } from "./wire/structs/create.js";
 import { splitSharePath, toSmbPath } from "./paths.js";
-import type { ClientOptions, Dirent, FileStat } from "./types.js";
+import type { ClientOptions, Dirent, FileStat, ChangeEvent } from "./types.js";
 import { encodeSetInfoRequest, encodeFileRenameInformation } from "./wire/structs/setInfo.js";
 import { InfoType, FileInformationClass } from "./wire/structs/queryInfo.js";
 import { SmbCommand, isSuccess, statusName } from "./wire/commands.js";
@@ -207,6 +208,28 @@ export class Client {
         });
       }
     });
+  }
+
+  async *watch(path: string, opts: { recursive?: boolean; signal?: AbortSignal } = {}): AsyncGenerator<ChangeEvent> {
+    const { share, rest } = splitSharePath(path);
+    const tree = await this.treeFor(share);
+    const open = await Open.create(tree, {
+      filename: toSmbPath(rest),
+      desiredAccess: FileAccess.FILE_READ_DATA | FileAccess.FILE_READ_ATTRIBUTES, // FILE_LIST_DIRECTORY = FILE_READ_DATA
+      shareAccess: ShareAccess.READ | ShareAccess.WRITE | ShareAccess.DELETE,
+      createDisposition: CreateDisposition.OPEN,
+      createOptions: 1, // DIRECTORY_FILE
+      fileAttributes: 0,
+    });
+    try {
+      for await (const ev of watchOpen(open, opts)) {
+        const fullPath = `${share}/${toSmbPath(rest).replace(/\\/g, "/")}/${ev.fileName.replace(/\\/g, "/")}`
+          .replace(/\/+/g, "/");
+        yield { action: ev.action, path: fullPath } satisfies ChangeEvent;
+      }
+    } finally {
+      try { await open.close(); } catch { /* ignore */ }
+    }
   }
 
   createReadStream(path: string): Readable {
