@@ -5,9 +5,25 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# id-token: write enables OIDC. The npm CLI exchanges this OIDC token for a
+# short-lived publish credential via npm Trusted Publishing — no long-lived
+# NPM_TOKEN secret is needed. The same id-token is also what gives the
+# published package its supply-chain provenance attestation.
+#
+# Setup (one-time):
+#   1. Publish the first version manually OR pre-configure the trusted
+#      publisher on npmjs.com so this workflow can claim the package.
+#   2. On npmjs.com → package settings → "Manage Trusted Publishers", add:
+#        Repository:        euricojardim/smb3-client
+#        Workflow filename: publish.yml
+#        Environment:       (leave blank, or match `environment:` below)
+#
+# Once that trust is registered, this workflow can publish without any
+# secret in the repo.
+
 permissions:
   contents: read
-  id-token: write # required for npm provenance
+  id-token: write
 
 jobs:
   publish:
@@ -42,7 +58,5 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish
+      - name: Publish via Trusted Publishing (no NPM_TOKEN required)
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
