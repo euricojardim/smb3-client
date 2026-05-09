@@ -122,6 +122,19 @@ export class Client {
     }, async (open) => metaToStat(open.meta));
   }
 
+  async mkdir(path: string): Promise<void> {
+    const { share, rest } = splitSharePath(path);
+    const tree = await this.treeFor(share);
+    await Open.withOpen(tree, {
+      filename: toSmbPath(rest),
+      desiredAccess: FileAccess.FILE_READ_ATTRIBUTES | FileAccess.FILE_WRITE_ATTRIBUTES,
+      shareAccess: ShareAccess.READ | ShareAccess.WRITE | ShareAccess.DELETE,
+      createDisposition: CreateDisposition.CREATE,
+      createOptions: 1, // DIRECTORY_FILE
+      fileAttributes: 0,
+    }, async () => undefined);
+  }
+
   async close(): Promise<void> {
     if (this.state === "closed") return;
     this.state = "closed";
