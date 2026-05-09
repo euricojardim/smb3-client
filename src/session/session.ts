@@ -138,6 +138,8 @@ export class Session {
     // Register the verifier on the connection so every subsequent signed response is checked.
     const signingKey = this.signingKey!;
     this.conn.setVerifier((frame, sig) => verify(frame, sig, signingKey, dialect));
+    // Register the cancel signer so CANCEL frames are signed per MS-SMB2 §3.2.4.24.
+    this.conn.setCancelSigner((msg) => sign(msg, signingKey, dialect));
   }
 
   async close(): Promise<void> {

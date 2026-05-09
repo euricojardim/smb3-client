@@ -65,6 +65,7 @@ export class Connection extends EventEmitter {
   private negotiated: NegotiatedConnection | null = null;
   private closed = false;
   private verifier: ((frame: Buffer, sig: Buffer) => boolean) | null = null;
+  private signCancel: ((msg: Buffer) => Buffer) | null = null;
 
   constructor(private readonly transport: Transport) {
     super();
@@ -180,6 +181,10 @@ export class Connection extends EventEmitter {
     this.verifier = fn;
   }
 
+  setCancelSigner(fn: (msg: Buffer) => Buffer): void {
+    this.signCancel = fn;
+  }
+
   private onMessage(msg: Buffer): void {
     let parsed: ReturnType<typeof decodeHeader>;
     try {
@@ -274,7 +279,11 @@ export class Connection extends EventEmitter {
     // requires the CANCEL to carry the ASYNC_COMMAND flag and the assigned AsyncId.
     // Look up the asyncId from our tracking map if the caller did not provide one.
     const asyncId = opts.asyncId ?? this.asyncIdByMessageId.get(opts.messageId.toString());
-    const flags = asyncId !== undefined ? HeaderFlag.ASYNC_COMMAND : 0;
+    let flags = asyncId !== undefined ? HeaderFlag.ASYNC_COMMAND : 0;
+    // Per MS-SMB2 §3.2.4.24, CANCEL must be signed when the session has a signing key.
+    if (this.signCancel !== null) {
+      flags = flags | HeaderFlag.SIGNED;
+    }
     const header = encodeHeader({
       command: SmbCommand.CANCEL,
       creditCharge: 1,
@@ -288,7 +297,14 @@ export class Connection extends EventEmitter {
       status: 0,
     });
     const body = encodeCancelRequest();
-    this.transport.send(makeFrame(Buffer.concat([header, body])));
+    const frameBuf = Buffer.concat([header, body]);
+    if (this.signCancel !== null) {
+      // Signature field (bytes 48..64) is already zeroed by encodeHeader (no signature was passed).
+      // Sign over the full frame with zeroed signature, then write the result into the frame.
+      const sig = this.signCancel(frameBuf);
+      sig.copy(frameBuf, 48);
+    }
+    this.transport.send(makeFrame(frameBuf));
   }
 
   close(): void {
