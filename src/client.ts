@@ -364,6 +364,12 @@ export class Client {
       ...(signing !== undefined ? { signing } : {}),
       creditCharge: 1,
     });
+    if (!isSuccess(resp.header.status)) {
+      throw new SmbError({
+        status: resp.header.status,
+        message: `IOCTL FSCTL_PIPE_TRANSCEIVE failed: ${statusName(resp.header.status)}`,
+      });
+    }
     return decodeIoctlResponse(resp.body, 64);
   }
 
