@@ -96,6 +96,7 @@ export const NTStatus = {
   STATUS_NETWORK_SESSION_EXPIRED: 0xc000035c,
   STATUS_CANCELLED: 0xc0000120,
   STATUS_INVALID_HANDLE: 0xc0000008,
+  STATUS_DELETE_PENDING: 0xc0000056,
 } as const;
 export type NTStatusValue = (typeof NTStatus)[keyof typeof NTStatus];
 

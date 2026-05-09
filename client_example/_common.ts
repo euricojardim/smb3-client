@@ -95,8 +95,22 @@ export async function removeDirRecursively(client: Client, dir: string): Promise
 
 /**
  * Clears the directory if present, then creates it fresh.
+ *
+ * Windows finalizes deletes asynchronously after the last handle closes, so an
+ * immediate mkdir can race against a still-pending delete and surface as
+ * STATUS_DELETE_PENDING (mapped to EBUSY). Retry briefly to absorb that.
  */
 export async function ensureCleanDir(client: Client, dir: string): Promise<void> {
   await removeDirRecursively(client, dir);
-  await client.mkdir(dir);
+  const delays = [50, 100, 250, 500, 1000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await client.mkdir(dir);
+      return;
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code !== "EBUSY" || attempt >= delays.length) throw err;
+      await new Promise((r) => setTimeout(r, delays[attempt]));
+    }
+  }
 }
