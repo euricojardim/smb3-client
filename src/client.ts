@@ -135,6 +135,32 @@ export class Client {
     }, async () => undefined);
   }
 
+  async rm(path: string): Promise<void> {
+    const { share, rest } = splitSharePath(path);
+    const tree = await this.treeFor(share);
+    await Open.withOpen(tree, {
+      filename: toSmbPath(rest),
+      desiredAccess: FileAccess.DELETE,
+      shareAccess: ShareAccess.READ | ShareAccess.WRITE | ShareAccess.DELETE,
+      createDisposition: CreateDisposition.OPEN,
+      createOptions: CreateOptions.NON_DIRECTORY_FILE | CreateOptions.DELETE_ON_CLOSE,
+      fileAttributes: 0,
+    }, async () => undefined);
+  }
+
+  async rmdir(path: string): Promise<void> {
+    const { share, rest } = splitSharePath(path);
+    const tree = await this.treeFor(share);
+    await Open.withOpen(tree, {
+      filename: toSmbPath(rest),
+      desiredAccess: FileAccess.DELETE,
+      shareAccess: ShareAccess.READ | ShareAccess.WRITE | ShareAccess.DELETE,
+      createDisposition: CreateDisposition.OPEN,
+      createOptions: CreateOptions.DIRECTORY_FILE | CreateOptions.DELETE_ON_CLOSE,
+      fileAttributes: 0,
+    }, async () => undefined);
+  }
+
   async close(): Promise<void> {
     if (this.state === "closed") return;
     this.state = "closed";
