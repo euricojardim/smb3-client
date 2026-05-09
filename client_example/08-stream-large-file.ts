@@ -13,7 +13,7 @@ try {
   console.log(`setting up ${dir} ...`);
   await ensureCleanDir(client, dir);
 
-  const SIZE = 600 * 1024 * 1024;
+  const SIZE = 4 * 1024 * 1024;
   const data = randomBytes(SIZE);
   const expectedHash = createHash("sha256").update(data).digest("hex");
   console.log(`generated ${SIZE / 1024} KiB, SHA-256: ${expectedHash.slice(0, 16)}...`);
