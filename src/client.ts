@@ -19,11 +19,22 @@ import {
   ShareAccess,
 } from "./wire/structs/create.js";
 import { splitSharePath, toSmbPath } from "./paths.js";
-import type { ClientOptions, Dirent, FileStat, ChangeEvent } from "./types.js";
+import type { ClientOptions, Dirent, FileStat, ChangeEvent, ShareInfo } from "./types.js";
 import { encodeSetInfoRequest, encodeFileRenameInformation } from "./wire/structs/setInfo.js";
 import { InfoType, FileInformationClass } from "./wire/structs/queryInfo.js";
 import { SmbCommand, isSuccess, statusName } from "./wire/commands.js";
 import { SmbError } from "./errors.js";
+import { encodeIoctlRequest, decodeIoctlResponse } from "./wire/structs/ioctl.js";
+import {
+  encodeBindRequest,
+  encodeRequest as rpcRequest,
+  parseResponse as rpcResponse,
+  encodeNetrShareEnumRequest,
+  parseNetrShareEnumResponse,
+  SRVSVC_UUID,
+  SRVSVC_MAJOR,
+  SRVSVC_MINOR,
+} from "./rpc/srvsvc.js";
 
 export class Client {
   private conn: Connection | null = null;
@@ -297,6 +308,63 @@ export class Client {
     } catch (err) {
       proxy.destroy(err as Error);
     }
+  }
+
+  async listShares(): Promise<ShareInfo[]> {
+    if (!this.conn || !this.session) throw new Error("not connected");
+    const ipcPath = `\\\\${this.opts.host}\\IPC$`;
+    const ipc = await Tree.connect(this.conn, this.session, ipcPath);
+    try {
+      return await Open.withOpen(ipc, {
+        filename: "srvsvc",
+        desiredAccess: FileAccess.GENERIC_READ | FileAccess.GENERIC_WRITE | FileAccess.FILE_READ_ATTRIBUTES,
+        shareAccess: ShareAccess.READ | ShareAccess.WRITE | ShareAccess.DELETE,
+        createDisposition: CreateDisposition.OPEN,
+        createOptions: 0,
+        fileAttributes: 0,
+      }, async (open) => {
+        // Bind
+        const bind = encodeBindRequest({ callId: 1, abstractUuid: SRVSVC_UUID, abstractMajor: SRVSVC_MAJOR, abstractMinor: SRVSVC_MINOR });
+        await this._pipeTransceive(open, bind);
+        // Request: NetrShareEnum (opnum 15)
+        const stub = encodeNetrShareEnumRequest({
+          serverName: `\\\\${this.opts.host}`,
+          infoLevel: 1,
+          preferredMaximumLength: 0xffffffff,
+        });
+        const req = rpcRequest({ callId: 2, opnum: 15, contextId: 0, stub });
+        const respFrame = await this._pipeTransceive(open, req);
+        const respStub = rpcResponse(respFrame);
+        if (!respStub) return [];
+        const parsed = parseNetrShareEnumResponse(respStub);
+        return parsed.entries.map((e) => ({
+          name: e.name,
+          type: ((e.type & 0xff) === 0 ? "disk" : (e.type & 0xff) === 1 ? "print" : (e.type & 0xff) === 3 ? "ipc" : "special") as ShareInfo["type"],
+          comment: e.comment,
+        }));
+      });
+    } finally {
+      await ipc.disconnect().catch(() => undefined);
+    }
+  }
+
+  private async _pipeTransceive(open: Open, payload: Buffer): Promise<Buffer> {
+    const FSCTL_PIPE_TRANSCEIVE = 0x0011c017;
+    const body = encodeIoctlRequest({
+      ctlCode: FSCTL_PIPE_TRANSCEIVE,
+      fileId: open.fileId,
+      input: payload,
+      maxOutputResponse: 1024 * 1024,
+      flags: 1, // SMB2_0_IOCTL_IS_FSCTL
+    });
+    const signing = open.tree.session.makeSigning();
+    const resp = await open.tree.conn.send(SmbCommand.IOCTL, body, {
+      sessionId: open.tree.session.sessionId,
+      treeId: open.tree.treeId,
+      ...(signing !== undefined ? { signing } : {}),
+      creditCharge: 1,
+    });
+    return decodeIoctlResponse(resp.body, 64);
   }
 
   async close(): Promise<void> {
