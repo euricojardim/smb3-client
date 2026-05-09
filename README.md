@@ -361,4 +361,4 @@ Client          — public fs-like API
 
 ## License
 
-ISC
+MIT — see [LICENSE](./LICENSE).
