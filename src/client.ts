@@ -1,3 +1,4 @@
+import { Readable, Writable } from "node:stream";
 import { TcpTransport } from "./transport/socket.js";
 import { Connection } from "./connection/connection.js";
 import { Session } from "./session/session.js";
@@ -7,6 +8,8 @@ import { readAll } from "./open/read.js";
 import { writeAll } from "./open/write.js";
 import { metaToStat } from "./open/query.js";
 import { readdirAll } from "./open/readdir.js";
+import { createReadStream as openCreateReadStream } from "./open/readStream.js";
+import { createWriteStream as openCreateWriteStream } from "./open/writeStream.js";
 import {
   CreateDisposition,
   CreateOptions,
@@ -204,6 +207,73 @@ export class Client {
         });
       }
     });
+  }
+
+  createReadStream(path: string): Readable {
+    const out = new Readable({ read() {} });
+    void this._beginReadStream(path, out);
+    return out;
+  }
+
+  private async _beginReadStream(path: string, out: Readable): Promise<void> {
+    try {
+      const { share, rest } = splitSharePath(path);
+      const tree = await this.treeFor(share);
+      const open = await Open.create(tree, {
+        filename: toSmbPath(rest),
+        desiredAccess: FileAccess.FILE_READ_DATA | FileAccess.FILE_READ_ATTRIBUTES,
+        shareAccess: ShareAccess.READ | ShareAccess.WRITE | ShareAccess.DELETE,
+        createDisposition: CreateDisposition.OPEN,
+        createOptions: CreateOptions.NON_DIRECTORY_FILE,
+        fileAttributes: 0,
+      });
+      const inner = openCreateReadStream(open);
+      inner.on("data", (chunk) => { if (!out.push(chunk)) inner.pause(); });
+      out.on("drain" as never, () => inner.resume());
+      inner.on("end", async () => { try { await open.close(); } catch { /* ignore */ } out.push(null); });
+      inner.on("error", (e) => { open.close().catch(() => undefined); out.destroy(e); });
+      out.on("close", () => inner.destroy());
+    } catch (err) {
+      out.destroy(err as Error);
+    }
+  }
+
+  createWriteStream(path: string): Writable {
+    const proxy = new Writable({
+      write(chunk, _enc, cb) {
+        this.emit("__chunk" as never, chunk, cb);
+      },
+      final(cb) {
+        this.emit("__final" as never, cb);
+      },
+    });
+    void this._beginWriteStream(path, proxy);
+    return proxy;
+  }
+
+  private async _beginWriteStream(path: string, proxy: Writable): Promise<void> {
+    try {
+      const { share, rest } = splitSharePath(path);
+      const tree = await this.treeFor(share);
+      const open = await Open.create(tree, {
+        filename: toSmbPath(rest),
+        desiredAccess: FileAccess.GENERIC_WRITE | FileAccess.FILE_READ_ATTRIBUTES,
+        shareAccess: ShareAccess.READ | ShareAccess.WRITE | ShareAccess.DELETE,
+        createDisposition: CreateDisposition.OVERWRITE_IF,
+        createOptions: CreateOptions.NON_DIRECTORY_FILE,
+        fileAttributes: 0,
+      });
+      const inner = openCreateWriteStream(open);
+      proxy.on("__chunk" as never, (chunk: Buffer, cb: (err?: Error) => void) => {
+        inner.write(chunk, (err) => cb(err ?? undefined));
+      });
+      proxy.on("__final" as never, (cb: (err?: Error) => void) => {
+        inner.end(() => cb());
+      });
+      inner.on("error", (e) => proxy.destroy(e));
+    } catch (err) {
+      proxy.destroy(err as Error);
+    }
   }
 
   async close(): Promise<void> {
