@@ -1,14 +1,16 @@
 # smb3-client
 
+[![CI](https://github.com/euricojardim/smb3-client/actions/workflows/ci.yml/badge.svg)](https://github.com/euricojardim/smb3-client/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/smb3-client.svg)](https://www.npmjs.com/package/smb3-client)
+
 `smb3-client` is a pure-TypeScript SMB 3.x client for Node.js 20+. It speaks [MS-SMB2] directly over TCP/445 — no native bindings, no external runtime dependencies — and exposes a familiar `fs`-like promise API: `readFile`, `writeFile`, `readdir`, `stat`, `mkdir`, and friends. It is aimed at server-side Node applications that need to talk to Windows file shares without mounting a network drive.
 
 ## Status
 
-- 107 unit tests pass.
+- 108 unit tests pass.
 - 10 integration tests pass against a real Windows server.
 - Full v1 API surface implemented (see [API](#api) below).
 - Alpha: the API may change before 1.0.
-- Not yet published to npm.
 
 ## Features
 
