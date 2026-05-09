@@ -7,13 +7,13 @@ import { randomBytes, createHash } from "node:crypto";
 const env = loadEnv();
 const client = await connectClient(env);
 const dir = `${env.share}/__node_smb3_example_streams`;
-const path = `${dir}/big.iso`;
+const path = `${dir}/big.bin`;
 
 try {
   console.log(`setting up ${dir} ...`);
   await ensureCleanDir(client, dir);
 
-  const SIZE = 4 * 1024 * 1024;
+  const SIZE = 600 * 1024 * 1024;
   const data = randomBytes(SIZE);
   const expectedHash = createHash("sha256").update(data).digest("hex");
   console.log(`generated ${SIZE / 1024} KiB, SHA-256: ${expectedHash.slice(0, 16)}...`);

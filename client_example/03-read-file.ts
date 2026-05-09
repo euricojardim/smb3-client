@@ -4,7 +4,7 @@ import { loadEnv, connectClient, ensureCleanDir, removeDirRecursively } from "./
 const env = loadEnv();
 const client = await connectClient(env);
 const dir = `${env.share}/__node_smb3_example_readfile`;
-const path = `${dir}/big.iso`;
+const path = `${dir}/readme.txt`;
 
 try {
   console.log(`setting up ${dir} ...`);

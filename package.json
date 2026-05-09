@@ -1,22 +1,48 @@
 {
-  "name": "node-smb3",
-  "version": "0.0.0",
-  "private": true,
+  "name": "smb3-client",
+  "version": "0.1.0",
+  "description": "TypeScript SMB3 client for Node.js. Pure ESM, no native dependencies. fs-like promise API with streaming I/O, directory change notifications, and share enumeration. Speaks MS-SMB2 over TCP/445.",
+  "keywords": [
+    "smb",
+    "smb2",
+    "smb3",
+    "cifs",
+    "fileshare",
+    "windows",
+    "ntlm",
+    "ntlmv2",
+    "spnego",
+    "ms-smb2",
+    "samba"
+  ],
   "type": "module",
   "license": "MIT",
   "author": "Eurico Jardim <euricojardim@gmail.com>",
   "engines": { "node": ">=20" },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
     "test": "vitest run test/unit",
     "test:watch": "vitest test/unit",
     "test:integration": "vitest run test/integration",
     "lint": "eslint .",
     "format": "prettier --write .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "verify": "npm run typecheck && npm run lint && npm test"
+    "verify": "npm run typecheck && npm run lint && npm test",
+    "prepublishOnly": "npm run clean && npm run verify && npm run build"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

@@ -1,6 +1,6 @@
-# node-smb3
+# smb3-client
 
-`node-smb3` is a pure-TypeScript SMB 3.x client for Node.js 20+. It speaks [MS-SMB2] directly over TCP/445 — no native bindings, no external runtime dependencies — and exposes a familiar `fs`-like promise API: `readFile`, `writeFile`, `readdir`, `stat`, `mkdir`, and friends. It is aimed at server-side Node applications that need to talk to Windows file shares without mounting a network drive.
+`smb3-client` is a pure-TypeScript SMB 3.x client for Node.js 20+. It speaks [MS-SMB2] directly over TCP/445 — no native bindings, no external runtime dependencies — and exposes a familiar `fs`-like promise API: `readFile`, `writeFile`, `readdir`, `stat`, `mkdir`, and friends. It is aimed at server-side Node applications that need to talk to Windows file shares without mounting a network drive.
 
 ## Status
 
@@ -40,20 +40,14 @@
 
 ## Installation
 
-The package is not yet published to npm. To use it locally:
-
 ```bash
-git clone <repo>
-cd node-smb3
-npm install
+npm install smb3-client
 ```
-
-Import from `./src/index.js` in your scripts (or from `dist/index.js` after `npm run build`).
 
 ## Quick start
 
 ```ts
-import { Client } from "./src/index.js";
+import { Client } from "smb3-client";
 
 const client = new Client({
   host: "fileserver.lan",
@@ -69,7 +63,7 @@ await client.close();
 
 ## API
 
-All methods are on the `Client` class exported from `src/index.js`.
+All methods are on the `Client` class exported from `smb3-client`.
 
 ### `new Client(opts: ClientOptions)`
 
