@@ -7,6 +7,7 @@ import {
   SmbCommand,
   Dialect,
   HeaderFlag,
+  NTStatus,
   SecurityMode,
   Capability,
   isSuccess,
@@ -202,7 +203,16 @@ export class Connection extends EventEmitter {
     // Replenish credits.
     this.credits.release(header.creditRequestResponse);
     // Pre-auth hash update for NEGOTIATE/SESSION_SETUP responses.
-    if (header.command === SmbCommand.NEGOTIATE || header.command === SmbCommand.SESSION_SETUP) {
+    // Per MS-SMB2 §3.2.5.3.1 / §3.2.5.5, the preauth hash must include the
+    // NEGOTIATE response and any SESSION_SETUP CHALLENGE (STATUS_MORE_PROCESSING_REQUIRED),
+    // but NOT the final SESSION_SETUP SUCCESS response — the success response is signed
+    // with the key that the hash is being used to derive.
+    if (header.command === SmbCommand.NEGOTIATE) {
+      this.preauth.update(msg);
+    } else if (
+      header.command === SmbCommand.SESSION_SETUP &&
+      header.status === NTStatus.STATUS_MORE_PROCESSING_REQUIRED
+    ) {
       this.preauth.update(msg);
     }
 
