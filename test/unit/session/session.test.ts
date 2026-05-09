@@ -5,7 +5,7 @@ import { Session } from "../../../src/session/session.js";
 import { encodeHeader } from "../../../src/wire/smb2-header.js";
 import { Writer } from "../../../src/wire/buffer.js";
 import { Dialect, NTStatus, SmbCommand } from "../../../src/wire/commands.js";
-import { wrapInitNegToken, wrapNegTokenResp } from "../../../src/session/spnego.js";
+import { wrapNegTokenResp } from "../../../src/session/spnego.js";
 
 function chalMessage(): Buffer {
   const w = new Writer();
@@ -60,7 +60,7 @@ describe("Session.setup", () => {
       if (smb.readUInt16LE(12) === SmbCommand.SESSION_SETUP) {
         if (step === 0) {
           step++;
-          ft.deliver(ssRespFrame(msgId, 0xabcdn, NTStatus.STATUS_MORE_PROCESSING_REQUIRED, wrapInitNegToken(chalMessage())));
+          ft.deliver(ssRespFrame(msgId, 0xabcdn, NTStatus.STATUS_MORE_PROCESSING_REQUIRED, wrapNegTokenResp(chalMessage())));
         } else {
           ft.deliver(ssRespFrame(msgId, 0xabcdn, 0, wrapNegTokenResp(Buffer.alloc(0))));
         }

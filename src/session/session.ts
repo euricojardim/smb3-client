@@ -9,7 +9,7 @@ import {
   rc4,
   NTLMSSP_FLAGS,
 } from "./ntlm.js";
-import { wrapInitNegToken, wrapNegTokenResp, extractNtlmFromInit } from "./spnego.js";
+import { wrapInitNegToken, wrapNegTokenResp, extractNtlmFromResp } from "./spnego.js";
 import { kdfSp800108CounterHmacSha256 } from "./keys.js";
 import { encodeSessionSetupRequest, decodeSessionSetupResponse } from "../wire/structs/sessionSetup.js";
 import { SmbCommand, NTStatus, Dialect, SecurityMode, isSuccess } from "../wire/commands.js";
@@ -54,7 +54,7 @@ export class Session {
     }
     this.sessionId = resp1.header.sessionId;
     const sessSetup1 = decodeSessionSetupResponse(resp1.body, 64);
-    const ntlmChalBlob = extractNtlmFromInit(sessSetup1.securityBuffer);
+    const ntlmChalBlob = extractNtlmFromResp(sessSetup1.securityBuffer);
     if (ntlmChalBlob.length === 0) {
       throw new SmbAuthError({ status: 0, message: "no NTLM CHALLENGE in server response" });
     }
