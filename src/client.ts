@@ -16,6 +16,10 @@ import {
 } from "./wire/structs/create.js";
 import { splitSharePath, toSmbPath } from "./paths.js";
 import type { ClientOptions, Dirent, FileStat } from "./types.js";
+import { encodeSetInfoRequest, encodeFileRenameInformation } from "./wire/structs/setInfo.js";
+import { InfoType, FileInformationClass } from "./wire/structs/queryInfo.js";
+import { SmbCommand, isSuccess, statusName } from "./wire/commands.js";
+import { SmbError } from "./errors.js";
 
 export class Client {
   private conn: Connection | null = null;
@@ -159,6 +163,47 @@ export class Client {
       createOptions: CreateOptions.DIRECTORY_FILE | CreateOptions.DELETE_ON_CLOSE,
       fileAttributes: 0,
     }, async () => undefined);
+  }
+
+  async rename(from: string, to: string): Promise<void> {
+    const f = splitSharePath(from);
+    const t = splitSharePath(to);
+    if (f.share !== t.share) {
+      throw new SmbError({ status: 0, message: "rename across shares is not supported" });
+    }
+    const tree = await this.treeFor(f.share);
+    await Open.withOpen(tree, {
+      filename: toSmbPath(f.rest),
+      desiredAccess: FileAccess.DELETE | FileAccess.FILE_READ_ATTRIBUTES,
+      shareAccess: ShareAccess.READ | ShareAccess.WRITE | ShareAccess.DELETE,
+      createDisposition: CreateDisposition.OPEN,
+      createOptions: 0,
+      fileAttributes: 0,
+    }, async (open) => {
+      const inner = encodeFileRenameInformation({
+        replaceIfExists: false,
+        fileName: toSmbPath(t.rest),
+      });
+      const body = encodeSetInfoRequest({
+        infoType: InfoType.FILE,
+        fileInformationClass: FileInformationClass.FileRenameInformation,
+        fileId: open.fileId,
+        buffer: inner,
+      });
+      const signing = tree.session.makeSigning();
+      const resp = await tree.conn.send(SmbCommand.SET_INFO, body, {
+        sessionId: tree.session.sessionId,
+        treeId: tree.treeId,
+        ...(signing !== undefined ? { signing } : {}),
+        creditCharge: 1,
+      });
+      if (!isSuccess(resp.header.status)) {
+        throw new SmbError({
+          status: resp.header.status,
+          message: `SET_INFO rename failed: ${statusName(resp.header.status)}`,
+        });
+      }
+    });
   }
 
   async close(): Promise<void> {
