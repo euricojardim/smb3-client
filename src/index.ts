@@ -1,1 +1,4 @@
 export const VERSION = "0.0.0";
+export { Client } from "./client.js";
+export { SmbError, SmbAuthError, SmbProtocolError } from "./errors.js";
+export type { ClientOptions, FileStat, Dirent, ShareInfo, ChangeEvent, ChangeAction } from "./types.js";
