@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>smb3-client — Pure-TypeScript SMB 3.x Client for Node.js</title>
+  <meta name="description" content="Talk to Windows file shares directly from Node.js 20+. Zero native bindings. NTLMv2, message signing, streaming I/O, change notifications. MIT licensed." />
+  <meta name="theme-color" content="#0F172A" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+            sans: ['"IBM Plex Sans"', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            ink: {
+              950: '#0A0F1C',
+              900: '#0F172A',
+              800: '#1E293B',
+              700: '#334155',
+              600: '#475569',
+              500: '#64748B',
+              400: '#94A3B8',
+              300: '#CBD5E1',
+              200: '#E2E8F0',
+              100: '#F1F5F9',
+              50:  '#F8FAFC',
+            },
+            run: {
+              400: '#4ADE80',
+              500: '#22C55E',
+              600: '#16A34A',
+              700: '#15803D',
+            },
+          },
+          boxShadow: {
+            'glow-run': '0 0 0 1px rgba(34,197,94,0.4), 0 10px 30px -10px rgba(34,197,94,0.45)',
+            'inner-line': 'inset 0 1px 0 0 rgba(255,255,255,0.06)',
+          },
+          keyframes: {
+            caret: { '0%,49%': { opacity: 1 }, '50%,100%': { opacity: 0 } },
+            'fade-up': { '0%': { opacity: 0, transform: 'translateY(8px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
+            'pulse-soft': { '0%,100%': { opacity: 0.6 }, '50%': { opacity: 1 } },
+          },
+          animation: {
+            caret: 'caret 1s steps(1) infinite',
+            'fade-up': 'fade-up .5s ease-out both',
+            'pulse-soft': 'pulse-soft 2.4s ease-in-out infinite',
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html { background: #0A0F1C; }
+    body { font-family: 'IBM Plex Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    .font-display { font-family: 'JetBrains Mono', ui-monospace, monospace; letter-spacing: -0.02em; }
+
+    /* Subtle dotted grid backdrop */
+    .grid-bg {
+      background-image:
+        radial-gradient(circle at 1px 1px, rgba(148,163,184,0.08) 1px, transparent 0);
+      background-size: 28px 28px;
+    }
+    .glow-orb {
+      position: absolute;
+      filter: blur(80px);
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    /* Token coloring for static code blocks */
+    .tok-k  { color: #C4B5FD; }   /* keyword */
+    .tok-s  { color: #86EFAC; }   /* string */
+    .tok-n  { color: #93C5FD; }   /* name/identifier */
+    .tok-c  { color: #64748B; font-style: italic; } /* comment */
+    .tok-p  { color: #F8FAFC; }   /* punct */
+    .tok-f  { color: #FCD34D; }   /* function */
+    .tok-t  { color: #67E8F9; }   /* type */
+    .tok-num{ color: #FDA4AF; }
+
+    /* Respect reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+    }
+
+    /* Custom scrollbar inside code panels */
+    .code-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+    .code-scroll::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 999px; }
+    .code-scroll::-webkit-scrollbar-thumb:hover { background: #334155; }
+  </style>
+</head>
+
+<body class="bg-ink-950 text-ink-100 selection:bg-run-500/30 selection:text-ink-50">
+
+  <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:bg-run-500 focus:text-ink-950 focus:px-4 focus:py-2 focus:rounded-lg focus:font-medium">Skip to content</a>
+
+  <!-- ───────── NAV ───────── -->
+  <header class="fixed top-4 left-4 right-4 z-40">
+    <nav aria-label="Primary" class="mx-auto max-w-6xl flex items-center justify-between gap-3 px-3 py-2.5 rounded-2xl bg-ink-900/70 backdrop-blur-xl border border-white/[0.06] shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
+      <a href="#" class="flex items-center gap-2.5 px-2 py-1 rounded-lg hover:bg-white/[0.04] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/60">
+        <span aria-hidden="true" class="grid place-items-center w-7 h-7 rounded-lg bg-gradient-to-br from-run-500 to-emerald-700 shadow-inner-line">
+          <svg viewBox="0 0 24 24" class="w-4 h-4 text-ink-950" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 7h16M4 12h10M4 17h16" />
+          </svg>
+        </span>
+        <span class="font-display text-[15px] font-semibold tracking-tight">smb3-client</span>
+        <span class="hidden sm:inline-flex items-center text-[10px] font-mono uppercase tracking-wider text-run-400 border border-run-500/30 bg-run-500/10 rounded-md px-1.5 py-0.5">alpha</span>
+      </a>
+
+      <ul class="hidden md:flex items-center gap-1 text-sm text-ink-300">
+        <li><a href="#features" class="px-3 py-1.5 rounded-lg hover:text-ink-50 hover:bg-white/[0.04] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/50">Features</a></li>
+        <li><a href="#quickstart" class="px-3 py-1.5 rounded-lg hover:text-ink-50 hover:bg-white/[0.04] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/50">Quick Start</a></li>
+        <li><a href="#api" class="px-3 py-1.5 rounded-lg hover:text-ink-50 hover:bg-white/[0.04] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/50">API</a></li>
+        <li><a href="#compat" class="px-3 py-1.5 rounded-lg hover:text-ink-50 hover:bg-white/[0.04] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/50">Compatibility</a></li>
+        <li><a href="#roadmap" class="px-3 py-1.5 rounded-lg hover:text-ink-50 hover:bg-white/[0.04] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/50">Roadmap</a></li>
+      </ul>
+
+      <div class="flex items-center gap-2">
+        <a href="https://www.npmjs.com/package/smb3-client" target="_blank" rel="noopener" aria-label="View on npm" class="hidden sm:inline-flex items-center gap-1.5 text-xs font-mono text-ink-300 hover:text-ink-50 border border-white/[0.08] hover:border-white/[0.18] px-2.5 py-1.5 rounded-lg bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/50">
+          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="currentColor" aria-hidden="true"><path d="M0 7.334v8h6.666v1.332H12v-1.332h12v-8H0zm6.666 6.664H5.334v-4H3.999v4H1.335V8.667h5.331v5.331zm4 0v1.336H8.001V8.667h5.334v5.332h-2.669v-.001zm12.001 0h-1.33v-4h-1.336v4h-1.335v-4h-1.33v4h-2.671V8.667h8.002v5.331zM10.665 10H12v2.667h-1.335V10z"/></svg>
+          <span>v0.x</span>
+        </a>
+        <a href="https://github.com/euricojardim/smb3-client" target="_blank" rel="noopener" class="inline-flex items-center gap-2 text-sm font-medium bg-ink-50 text-ink-950 hover:bg-white px-3.5 py-1.5 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/60">
+          <svg viewBox="0 0 24 24" class="w-4 h-4" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <!-- ───────── HERO ───────── -->
+    <section class="relative overflow-hidden pt-32 sm:pt-40 pb-20 sm:pb-28">
+      <div class="absolute inset-0 grid-bg [mask-image:radial-gradient(ellipse_at_top,black_30%,transparent_70%)]" aria-hidden="true"></div>
+      <div class="glow-orb -top-24 -left-32 w-[480px] h-[480px] rounded-full bg-run-500/25" aria-hidden="true"></div>
+      <div class="glow-orb top-10 -right-40 w-[520px] h-[520px] rounded-full bg-sky-500/15" aria-hidden="true"></div>
+
+      <div class="relative mx-auto max-w-6xl px-4 sm:px-6">
+        <div class="grid lg:grid-cols-[1.05fr_1fr] gap-10 lg:gap-14 items-center">
+
+          <div class="animate-fade-up">
+            <!-- Badge row -->
+            <div class="flex flex-wrap items-center gap-2 text-[11px] font-mono uppercase tracking-wider">
+              <span class="inline-flex items-center gap-1.5 border border-run-500/30 bg-run-500/10 text-run-400 px-2 py-1 rounded-md">
+                <span class="w-1.5 h-1.5 rounded-full bg-run-400 animate-pulse-soft"></span>
+                Alpha · v0.x
+              </span>
+              <span class="inline-flex items-center border border-white/10 bg-white/[0.03] text-ink-300 px-2 py-1 rounded-md">MIT License</span>
+              <span class="inline-flex items-center border border-white/10 bg-white/[0.03] text-ink-300 px-2 py-1 rounded-md">Node ≥ 20</span>
+              <span class="inline-flex items-center gap-1.5 border border-white/10 bg-white/[0.03] text-ink-300 px-2 py-1 rounded-md">
+                <svg viewBox="0 0 24 24" class="w-3 h-3 text-sky-400" fill="currentColor" aria-hidden="true"><path d="M1.125 0C.502 0 0 .502 0 1.125v21.75C0 23.498.502 24 1.125 24h21.75C23.498 24 24 23.498 24 22.875V1.125C24 .502 23.498 0 22.875 0H1.125zm17.363 9.75c.612 0 1.154.037 1.627.111v1.872a4.7 4.7 0 0 0-.726-.203 3.49 3.49 0 0 0-.795-.094c-.46 0-.873.062-1.235.184-.36.123-.667.293-.92.51a2.1 2.1 0 0 0-.567.79c-.13.32-.196.677-.196 1.072v3.917h-2.358v-7.95h2.358v1.34h.026a3 3 0 0 1 .526-.733 3.7 3.7 0 0 1 .727-.55c.275-.16.57-.282.881-.366.314-.084.628-.126.952-.126zM5.844 11.4c.42 0 .817.063 1.196.188.378.124.71.302.998.535.288.232.515.514.683.846.168.332.252.7.252 1.105 0 .402-.084.766-.252 1.094-.168.328-.396.604-.683.83-.288.226-.624.4-1.005.522-.382.122-.795.183-1.232.183-.443 0-.85-.061-1.221-.184-.371-.122-.69-.295-.96-.518-.27-.224-.483-.493-.638-.808-.156-.314-.234-.665-.234-1.052 0-.395.078-.751.234-1.068.155-.317.367-.586.638-.808.27-.222.589-.394.96-.516.371-.121.778-.183 1.221-.183.024 0 .051 0 .076.002l.067-.168z"/></svg>
+                99.8% TypeScript
+              </span>
+            </div>
+
+            <h1 class="font-display text-[40px] leading-[1.05] sm:text-[56px] sm:leading-[1.04] lg:text-[64px] font-semibold mt-5 tracking-tight">
+              Pure-TypeScript<br />
+              <span class="bg-gradient-to-br from-run-400 via-emerald-400 to-cyan-300 bg-clip-text text-transparent">SMB 3.x client</span><br />
+              for Node.js.
+            </h1>
+
+            <p class="mt-6 text-lg sm:text-xl text-ink-300 max-w-xl leading-relaxed">
+              Talk to Windows file shares over TCP/445 with a familiar filesystem-like promise API. No native bindings, no external runtime dependencies — just TypeScript.
+            </p>
+
+            <!-- Install command -->
+            <div class="mt-8 group/install relative max-w-xl">
+              <div class="flex items-stretch rounded-xl bg-ink-900 border border-white/[0.08] overflow-hidden focus-within:border-run-500/50 transition-colors">
+                <span class="grid place-items-center px-3.5 text-run-400 font-mono text-sm border-r border-white/[0.06] bg-ink-900" aria-hidden="true">$</span>
+                <code id="installCmd" class="flex-1 font-mono text-sm sm:text-[15px] py-3.5 px-4 text-ink-100 overflow-x-auto code-scroll whitespace-nowrap">npm install smb3-client</code>
+                <button type="button" data-copy="#installCmd" aria-label="Copy install command"
+                  class="copy-btn group/btn inline-flex items-center gap-1.5 px-3 sm:px-4 text-xs font-mono border-l border-white/[0.06] text-ink-300 hover:text-ink-50 hover:bg-white/[0.04] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/60">
+                  <svg class="copy-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <svg class="check-icon hidden w-3.5 h-3.5 text-run-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span class="copy-label">copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- CTAs -->
+            <div class="mt-6 flex flex-wrap gap-3">
+              <a href="#quickstart" class="inline-flex items-center gap-2 bg-run-500 hover:bg-run-400 text-ink-950 font-semibold px-5 py-3 rounded-xl shadow-glow-run transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950">
+                Read the Quick Start
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+              </a>
+              <a href="https://github.com/euricojardim/smb3-client" target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.16] text-ink-100 font-medium px-5 py-3 rounded-xl transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/60">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+                Star on GitHub
+              </a>
+            </div>
+
+            <!-- Mini stats -->
+            <dl class="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4 max-w-xl">
+              <div>
+                <dt class="text-[11px] uppercase font-mono tracking-wider text-ink-500">Dialects</dt>
+                <dd class="font-display text-2xl text-ink-50 mt-1">2.1 – 3.1.1</dd>
+              </div>
+              <div>
+                <dt class="text-[11px] uppercase font-mono tracking-wider text-ink-500">Unit tests</dt>
+                <dd class="font-display text-2xl text-ink-50 mt-1">108<span class="text-run-400">·</span></dd>
+              </div>
+              <div>
+                <dt class="text-[11px] uppercase font-mono tracking-wider text-ink-500">Integration</dt>
+                <dd class="font-display text-2xl text-ink-50 mt-1">10<span class="text-run-400">·</span></dd>
+              </div>
+              <div>
+                <dt class="text-[11px] uppercase font-mono tracking-wider text-ink-500">Native deps</dt>
+                <dd class="font-display text-2xl text-ink-50 mt-1">0</dd>
+              </div>
+            </dl>
+          </div>
+
+          <!-- Right: terminal/code preview -->
+          <div class="relative animate-fade-up [animation-delay:120ms]">
+            <div class="absolute -inset-px rounded-2xl bg-gradient-to-br from-run-500/30 via-transparent to-sky-500/20 blur-xl opacity-50" aria-hidden="true"></div>
+            <div class="relative rounded-2xl border border-white/[0.08] bg-ink-900/80 backdrop-blur-sm shadow-2xl overflow-hidden">
+              <!-- header -->
+              <div class="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] bg-white/[0.02]">
+                <div class="flex items-center gap-1.5" aria-hidden="true">
+                  <span class="w-3 h-3 rounded-full bg-ink-700"></span>
+                  <span class="w-3 h-3 rounded-full bg-ink-700"></span>
+                  <span class="w-3 h-3 rounded-full bg-ink-700"></span>
+                </div>
+                <span class="font-mono text-xs text-ink-500">example.ts</span>
+                <span class="ml-auto inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-run-400">
+                  <span class="w-1.5 h-1.5 rounded-full bg-run-400"></span>
+                  connected
+                </span>
+              </div>
+              <pre class="font-mono text-[13px] sm:text-sm leading-[1.7] p-5 overflow-x-auto code-scroll"><code><span class="tok-k">import</span> <span class="tok-p">{</span> <span class="tok-n">Client</span> <span class="tok-p">}</span> <span class="tok-k">from</span> <span class="tok-s">"smb3-client"</span><span class="tok-p">;</span>
+
+<span class="tok-k">const</span> <span class="tok-n">smb</span> <span class="tok-p">=</span> <span class="tok-k">new</span> <span class="tok-t">Client</span><span class="tok-p">({</span>
+  <span class="tok-n">host</span><span class="tok-p">:</span>     <span class="tok-s">"fileserver.lan"</span><span class="tok-p">,</span>
+  <span class="tok-n">username</span><span class="tok-p">:</span> <span class="tok-s">"alice"</span><span class="tok-p">,</span>
+  <span class="tok-n">password</span><span class="tok-p">:</span> <span class="tok-n">process</span><span class="tok-p">.</span><span class="tok-n">env</span><span class="tok-p">.</span><span class="tok-n">SMB_PASSWORD</span><span class="tok-p">,</span>
+<span class="tok-p">});</span>
+
+<span class="tok-k">await</span> <span class="tok-n">smb</span><span class="tok-p">.</span><span class="tok-f">connect</span><span class="tok-p">();</span>
+
+<span class="tok-c">// filesystem-like, promise-based</span>
+<span class="tok-k">const</span> <span class="tok-n">readme</span> <span class="tok-p">=</span> <span class="tok-k">await</span> <span class="tok-n">smb</span><span class="tok-p">.</span><span class="tok-f">readFile</span><span class="tok-p">(</span><span class="tok-s">"public/readme.txt"</span><span class="tok-p">);</span>
+<span class="tok-k">const</span> <span class="tok-n">items</span>  <span class="tok-p">=</span> <span class="tok-k">await</span> <span class="tok-n">smb</span><span class="tok-p">.</span><span class="tok-f">readdir</span><span class="tok-p">(</span><span class="tok-s">"reports/2026"</span><span class="tok-p">);</span>
+
+<span class="tok-c">// stream large files</span>
+<span class="tok-n">smb</span><span class="tok-p">.</span><span class="tok-f">createReadStream</span><span class="tok-p">(</span><span class="tok-s">"backups/db.bin"</span><span class="tok-p">)</span>
+   <span class="tok-p">.</span><span class="tok-f">pipe</span><span class="tok-p">(</span><span class="tok-f">createWriteStream</span><span class="tok-p">(</span><span class="tok-s">"./db.bin"</span><span class="tok-p">));</span>
+
+<span class="tok-k">await</span> <span class="tok-n">smb</span><span class="tok-p">.</span><span class="tok-f">close</span><span class="tok-p">();</span><span class="inline-block w-2 h-4 bg-run-400 align-[-2px] ml-0.5 animate-caret"></span></code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── TRUST STRIP ───────── -->
+    <section aria-labelledby="trust-heading" class="relative border-y border-white/[0.06] bg-white/[0.015]">
+      <h2 id="trust-heading" class="sr-only">Project credentials</h2>
+      <div class="mx-auto max-w-6xl px-4 sm:px-6 py-6 grid grid-cols-2 md:grid-cols-4 gap-y-4 text-sm">
+        <div class="flex items-center gap-3">
+          <span class="grid place-items-center w-8 h-8 rounded-lg bg-run-500/10 text-run-400 border border-run-500/20">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+          </span>
+          <div><div class="text-ink-100 font-medium">Pure TypeScript</div><div class="text-ink-500 text-xs">No native bindings</div></div>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="grid place-items-center w-8 h-8 rounded-lg bg-sky-500/10 text-sky-300 border border-sky-500/20">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </span>
+          <div><div class="text-ink-100 font-medium">Signed messages</div><div class="text-ink-500 text-xs">HMAC-SHA256 · AES-CMAC</div></div>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="grid place-items-center w-8 h-8 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </span>
+          <div><div class="text-ink-100 font-medium">118 tests passing</div><div class="text-ink-500 text-xs">Unit + integration</div></div>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="grid place-items-center w-8 h-8 rounded-lg bg-violet-500/10 text-violet-300 border border-violet-500/20">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </span>
+          <div><div class="text-ink-100 font-medium">MIT licensed</div><div class="text-ink-500 text-xs">Free for any use</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── FEATURES ───────── -->
+    <section id="features" class="relative py-24 sm:py-32">
+      <div class="mx-auto max-w-6xl px-4 sm:px-6">
+        <div class="max-w-2xl">
+          <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-run-400">// features</p>
+          <h2 class="font-display text-3xl sm:text-4xl lg:text-5xl mt-3 font-semibold tracking-tight">Everything you need to <span class="text-run-400">talk SMB</span> from Node.</h2>
+          <p class="mt-5 text-lg text-ink-300 leading-relaxed">A clean, dependency-free implementation that covers dialect negotiation, authentication, signing, and the file operations you actually use.</p>
+        </div>
+
+        <ul class="mt-14 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <!-- Card template repeated; each gets a quiet hover (no scale) -->
+          <li class="group rounded-2xl bg-ink-900/60 border border-white/[0.06] hover:border-run-500/30 hover:bg-ink-900 transition-colors p-6 shadow-inner-line">
+            <div class="grid place-items-center w-10 h-10 rounded-xl bg-run-500/10 border border-run-500/20 text-run-400 group-hover:bg-run-500/15 transition-colors" aria-hidden="true">
+              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </div>
+            <h3 class="font-display text-lg mt-5 text-ink-50">Dialect negotiation</h3>
+            <p class="mt-2 text-sm text-ink-400 leading-relaxed">SMB 2.1, 3.0, 3.0.2 and 3.1.1 — negotiated automatically with the server.</p>
+          </li>
+
+          <li class="group rounded-2xl bg-ink-900/60 border border-white/[0.06] hover:border-run-500/30 hover:bg-ink-900 transition-colors p-6 shadow-inner-line">
+            <div class="grid place-items-center w-10 h-10 rounded-xl bg-run-500/10 border border-run-500/20 text-run-400 group-hover:bg-run-500/15 transition-colors" aria-hidden="true">
+              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7"/><path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2z"/><circle cx="12" cy="13" r="2"/></svg>
+            </div>
+            <h3 class="font-display text-lg mt-5 text-ink-50">NTLMv2 + SPNEGO</h3>
+            <p class="mt-2 text-sm text-ink-400 leading-relaxed">Workgroup, local, and Active Directory accounts work out of the box.</p>
+          </li>
+
+          <li class="group rounded-2xl bg-ink-900/60 border border-white/[0.06] hover:border-run-500/30 hover:bg-ink-900 transition-colors p-6 shadow-inner-line">
+            <div class="grid place-items-center w-10 h-10 rounded-xl bg-run-500/10 border border-run-500/20 text-run-400 group-hover:bg-run-500/15 transition-colors" aria-hidden="true">
+              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <h3 class="font-display text-lg mt-5 text-ink-50">Message signing</h3>
+            <p class="mt-2 text-sm text-ink-400 leading-relaxed">HMAC-SHA256 (SMB 2.x) and AES-128-CMAC (SMB 3.x) — verified per packet.</p>
+          </li>
+
+          <li class="group rounded-2xl bg-ink-900/60 border border-white/[0.06] hover:border-run-500/30 hover:bg-ink-900 transition-colors p-6 shadow-inner-line">
+            <div class="grid place-items-center w-10 h-10 rounded-xl bg-run-500/10 border border-run-500/20 text-run-400 group-hover:bg-run-500/15 transition-colors" aria-hidden="true">
+              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+            </div>
+            <h3 class="font-display text-lg mt-5 text-ink-50">Filesystem-like API</h3>
+            <p class="mt-2 text-sm text-ink-400 leading-relaxed">Promise-based <code class="font-mono text-ink-200 text-[12px] bg-white/[0.05] px-1 py-0.5 rounded">readFile</code>, <code class="font-mono text-ink-200 text-[12px] bg-white/[0.05] px-1 py-0.5 rounded">readdir</code>, <code class="font-mono text-ink-200 text-[12px] bg-white/[0.05] px-1 py-0.5 rounded">stat</code>, <code class="font-mono text-ink-200 text-[12px] bg-white/[0.05] px-1 py-0.5 rounded">mkdir</code> — same shape as <code class="font-mono text-ink-200 text-[12px] bg-white/[0.05] px-1 py-0.5 rounded">node:fs</code>.</p>
+          </li>
+
+          <li class="group rounded-2xl bg-ink-900/60 border border-white/[0.06] hover:border-run-500/30 hover:bg-ink-900 transition-colors p-6 shadow-inner-line">
+            <div class="grid place-items-center w-10 h-10 rounded-xl bg-run-500/10 border border-run-500/20 text-run-400 group-hover:bg-run-500/15 transition-colors" aria-hidden="true">
+              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h6"/><path d="M14 12h6"/><circle cx="12" cy="12" r="2"/><path d="M18 6V4M6 6V4M18 20v-2M6 20v-2"/></svg>
+            </div>
+            <h3 class="font-display text-lg mt-5 text-ink-50">Streaming I/O</h3>
+            <p class="mt-2 text-sm text-ink-400 leading-relaxed">Backed by Node's <code class="font-mono text-ink-200 text-[12px] bg-white/[0.05] px-1 py-0.5 rounded">Readable</code> / <code class="font-mono text-ink-200 text-[12px] bg-white/[0.05] px-1 py-0.5 rounded">Writable</code>. Pipe large files without buffering everything in memory.</p>
+          </li>
+
+          <li class="group rounded-2xl bg-ink-900/60 border border-white/[0.06] hover:border-run-500/30 hover:bg-ink-900 transition-colors p-6 shadow-inner-line">
+            <div class="grid place-items-center w-10 h-10 rounded-xl bg-run-500/10 border border-run-500/20 text-run-400 group-hover:bg-run-500/15 transition-colors" aria-hidden="true">
+              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M14 4 9 9l-3-3"/></svg>
+            </div>
+            <h3 class="font-display text-lg mt-5 text-ink-50">Change notifications</h3>
+            <p class="mt-2 text-sm text-ink-400 leading-relaxed">Watch directories with an <code class="font-mono text-ink-200 text-[12px] bg-white/[0.05] px-1 py-0.5 rounded">AsyncIterable</code>. Built-in backpressure handling.</p>
+          </li>
+
+          <li class="group rounded-2xl bg-ink-900/60 border border-white/[0.06] hover:border-run-500/30 hover:bg-ink-900 transition-colors p-6 shadow-inner-line">
+            <div class="grid place-items-center w-10 h-10 rounded-xl bg-run-500/10 border border-run-500/20 text-run-400 group-hover:bg-run-500/15 transition-colors" aria-hidden="true">
+              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </div>
+            <h3 class="font-display text-lg mt-5 text-ink-50">Share enumeration</h3>
+            <p class="mt-2 text-sm text-ink-400 leading-relaxed">List exposed shares with <code class="font-mono text-ink-200 text-[12px] bg-white/[0.05] px-1 py-0.5 rounded">listShares()</code>, powered by a minimal DCE/RPC layer.</p>
+          </li>
+
+          <li class="group rounded-2xl bg-ink-900/60 border border-white/[0.06] hover:border-run-500/30 hover:bg-ink-900 transition-colors p-6 shadow-inner-line">
+            <div class="grid place-items-center w-10 h-10 rounded-xl bg-run-500/10 border border-run-500/20 text-run-400 group-hover:bg-run-500/15 transition-colors" aria-hidden="true">
+              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            </div>
+            <h3 class="font-display text-lg mt-5 text-ink-50">TypeScript-first</h3>
+            <p class="mt-2 text-sm text-ink-400 leading-relaxed">Strict types, exhaustive enums for SMB flags, no <code class="font-mono text-ink-200 text-[12px] bg-white/[0.05] px-1 py-0.5 rounded">any</code> in public APIs.</p>
+          </li>
+
+          <li class="group rounded-2xl bg-ink-900/60 border border-white/[0.06] hover:border-run-500/30 hover:bg-ink-900 transition-colors p-6 shadow-inner-line">
+            <div class="grid place-items-center w-10 h-10 rounded-xl bg-run-500/10 border border-run-500/20 text-run-400 group-hover:bg-run-500/15 transition-colors" aria-hidden="true">
+              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6M4.22 4.22l4.24 4.24m7.08 7.08 4.24 4.24M1 12h6m10 0h6M4.22 19.78l4.24-4.24m7.08-7.08 4.24-4.24"/></svg>
+            </div>
+            <h3 class="font-display text-lg mt-5 text-ink-50">Zero runtime deps</h3>
+            <p class="mt-2 text-sm text-ink-400 leading-relaxed">Audit-friendly: just standard Node APIs and <code class="font-mono text-ink-200 text-[12px] bg-white/[0.05] px-1 py-0.5 rounded">node:crypto</code>.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ───────── QUICK START ───────── -->
+    <section id="quickstart" class="relative py-24 sm:py-32 border-t border-white/[0.06]">
+      <div class="absolute inset-0 grid-bg [mask-image:radial-gradient(ellipse_at_center,black_20%,transparent_60%)] opacity-50" aria-hidden="true"></div>
+      <div class="relative mx-auto max-w-6xl px-4 sm:px-6">
+        <div class="max-w-2xl">
+          <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-run-400">// quick start</p>
+          <h2 class="font-display text-3xl sm:text-4xl lg:text-5xl mt-3 font-semibold tracking-tight">Up and running in <span class="text-run-400">under a minute</span>.</h2>
+          <p class="mt-5 text-lg text-ink-300">Install, connect with a username and password, and start reading files. Strong types guide you the rest of the way.</p>
+        </div>
+
+        <div class="mt-12 grid lg:grid-cols-12 gap-6">
+          <!-- Step 1 -->
+          <div class="lg:col-span-4 rounded-2xl bg-ink-900/60 border border-white/[0.06] p-6">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-xs text-run-400">01</span>
+              <h3 class="font-display text-lg text-ink-50">Install</h3>
+            </div>
+            <p class="mt-2 text-sm text-ink-400">Pick your package manager. The published bundle is ESM with TypeScript declarations included.</p>
+            <div class="mt-5 space-y-2">
+              <div class="flex items-center gap-2 rounded-lg bg-ink-950 border border-white/[0.06] px-3 py-2 font-mono text-[13px]">
+                <span class="text-run-400">$</span><code id="cmd-npm" class="flex-1 text-ink-100">npm install smb3-client</code>
+                <button class="copy-btn cursor-pointer text-ink-500 hover:text-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/60 rounded p-1" data-copy="#cmd-npm" aria-label="Copy npm install">
+                  <svg class="copy-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <svg class="check-icon hidden w-3.5 h-3.5 text-run-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              </div>
+              <div class="flex items-center gap-2 rounded-lg bg-ink-950 border border-white/[0.06] px-3 py-2 font-mono text-[13px]">
+                <span class="text-run-400">$</span><code id="cmd-pnpm" class="flex-1 text-ink-100">pnpm add smb3-client</code>
+                <button class="copy-btn cursor-pointer text-ink-500 hover:text-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/60 rounded p-1" data-copy="#cmd-pnpm" aria-label="Copy pnpm add">
+                  <svg class="copy-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <svg class="check-icon hidden w-3.5 h-3.5 text-run-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              </div>
+              <div class="flex items-center gap-2 rounded-lg bg-ink-950 border border-white/[0.06] px-3 py-2 font-mono text-[13px]">
+                <span class="text-run-400">$</span><code id="cmd-yarn" class="flex-1 text-ink-100">yarn add smb3-client</code>
+                <button class="copy-btn cursor-pointer text-ink-500 hover:text-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/60 rounded p-1" data-copy="#cmd-yarn" aria-label="Copy yarn add">
+                  <svg class="copy-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <svg class="check-icon hidden w-3.5 h-3.5 text-run-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2 -->
+          <div class="lg:col-span-8 rounded-2xl bg-ink-900/60 border border-white/[0.06] overflow-hidden">
+            <div class="flex items-center gap-2 px-5 pt-5">
+              <span class="font-mono text-xs text-run-400">02</span>
+              <h3 class="font-display text-lg text-ink-50">Connect & read a file</h3>
+            </div>
+            <p class="px-5 mt-2 text-sm text-ink-400">A minimal end-to-end example using NTLMv2 against a Windows file share.</p>
+
+            <div class="mt-5 px-5 pb-5">
+              <div class="rounded-xl border border-white/[0.06] bg-ink-950 overflow-hidden">
+                <div class="flex items-center gap-2 px-4 py-2 border-b border-white/[0.06] bg-white/[0.02]">
+                  <span class="w-2 h-2 rounded-full bg-run-400"></span>
+                  <span class="font-mono text-[11px] text-ink-500">read-file.ts</span>
+                </div>
+                <pre class="font-mono text-[13px] leading-[1.7] p-5 overflow-x-auto code-scroll"><code><span class="tok-k">import</span> <span class="tok-p">{</span> <span class="tok-n">Client</span> <span class="tok-p">}</span> <span class="tok-k">from</span> <span class="tok-s">"smb3-client"</span><span class="tok-p">;</span>
+
+<span class="tok-k">const</span> <span class="tok-n">client</span> <span class="tok-p">=</span> <span class="tok-k">new</span> <span class="tok-t">Client</span><span class="tok-p">({</span>
+  <span class="tok-n">host</span><span class="tok-p">:</span>     <span class="tok-s">"fileserver.lan"</span><span class="tok-p">,</span>
+  <span class="tok-n">port</span><span class="tok-p">:</span>     <span class="tok-num">445</span><span class="tok-p">,</span>
+  <span class="tok-n">share</span><span class="tok-p">:</span>    <span class="tok-s">"public"</span><span class="tok-p">,</span>
+  <span class="tok-n">username</span><span class="tok-p">:</span> <span class="tok-s">"alice"</span><span class="tok-p">,</span>
+  <span class="tok-n">password</span><span class="tok-p">:</span> <span class="tok-n">process</span><span class="tok-p">.</span><span class="tok-n">env</span><span class="tok-p">.</span><span class="tok-n">SMB_PASSWORD</span><span class="tok-p">,</span>
+<span class="tok-p">});</span>
+
+<span class="tok-k">await</span> <span class="tok-n">client</span><span class="tok-p">.</span><span class="tok-f">connect</span><span class="tok-p">();</span>
+<span class="tok-k">const</span> <span class="tok-n">data</span> <span class="tok-p">=</span> <span class="tok-k">await</span> <span class="tok-n">client</span><span class="tok-p">.</span><span class="tok-f">readFile</span><span class="tok-p">(</span><span class="tok-s">"readme.txt"</span><span class="tok-p">);</span>
+<span class="tok-n">console</span><span class="tok-p">.</span><span class="tok-f">log</span><span class="tok-p">(</span><span class="tok-n">data</span><span class="tok-p">.</span><span class="tok-f">toString</span><span class="tok-p">(</span><span class="tok-s">"utf8"</span><span class="tok-p">));</span>
+<span class="tok-k">await</span> <span class="tok-n">client</span><span class="tok-p">.</span><span class="tok-f">close</span><span class="tok-p">();</span></code></pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: stream -->
+          <div class="lg:col-span-6 rounded-2xl bg-ink-900/60 border border-white/[0.06] overflow-hidden">
+            <div class="flex items-center gap-2 px-5 pt-5">
+              <span class="font-mono text-xs text-run-400">03</span>
+              <h3 class="font-display text-lg text-ink-50">Stream a large file</h3>
+            </div>
+            <p class="px-5 mt-2 text-sm text-ink-400">Pipe directly into any Node writable — backpressure is handled for you.</p>
+            <div class="mt-5 px-5 pb-5">
+              <div class="rounded-xl border border-white/[0.06] bg-ink-950 overflow-hidden">
+                <pre class="font-mono text-[13px] leading-[1.7] p-5 overflow-x-auto code-scroll"><code><span class="tok-k">import</span> <span class="tok-p">{</span> <span class="tok-n">createWriteStream</span> <span class="tok-p">}</span> <span class="tok-k">from</span> <span class="tok-s">"node:fs"</span><span class="tok-p">;</span>
+<span class="tok-k">import</span> <span class="tok-p">{</span> <span class="tok-n">pipeline</span> <span class="tok-p">}</span> <span class="tok-k">from</span> <span class="tok-s">"node:stream/promises"</span><span class="tok-p">;</span>
+
+<span class="tok-k">await</span> <span class="tok-f">pipeline</span><span class="tok-p">(</span>
+  <span class="tok-n">client</span><span class="tok-p">.</span><span class="tok-f">createReadStream</span><span class="tok-p">(</span><span class="tok-s">"backups/db.bin"</span><span class="tok-p">),</span>
+  <span class="tok-f">createWriteStream</span><span class="tok-p">(</span><span class="tok-s">"./db.bin"</span><span class="tok-p">),</span>
+<span class="tok-p">);</span></code></pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 4: watch -->
+          <div class="lg:col-span-6 rounded-2xl bg-ink-900/60 border border-white/[0.06] overflow-hidden">
+            <div class="flex items-center gap-2 px-5 pt-5">
+              <span class="font-mono text-xs text-run-400">04</span>
+              <h3 class="font-display text-lg text-ink-50">Watch a directory</h3>
+            </div>
+            <p class="px-5 mt-2 text-sm text-ink-400">Subscribe to filesystem changes via an <code class="font-mono text-ink-200 text-[12px] bg-white/[0.05] px-1 py-0.5 rounded">AsyncIterable</code>.</p>
+            <div class="mt-5 px-5 pb-5">
+              <div class="rounded-xl border border-white/[0.06] bg-ink-950 overflow-hidden">
+                <pre class="font-mono text-[13px] leading-[1.7] p-5 overflow-x-auto code-scroll"><code><span class="tok-k">for</span> <span class="tok-k">await</span> <span class="tok-p">(</span><span class="tok-k">const</span> <span class="tok-n">change</span> <span class="tok-k">of</span> <span class="tok-n">client</span><span class="tok-p">.</span><span class="tok-f">watch</span><span class="tok-p">(</span><span class="tok-s">"inbox/"</span><span class="tok-p">))</span> <span class="tok-p">{</span>
+  <span class="tok-n">console</span><span class="tok-p">.</span><span class="tok-f">log</span><span class="tok-p">(</span><span class="tok-n">change</span><span class="tok-p">.</span><span class="tok-n">action</span><span class="tok-p">,</span> <span class="tok-n">change</span><span class="tok-p">.</span><span class="tok-n">path</span><span class="tok-p">);</span>
+  <span class="tok-c">// "added" | "removed" | "modified" | "renamed"</span>
+<span class="tok-p">}</span></code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── API REFERENCE ───────── -->
+    <section id="api" class="py-24 sm:py-32 border-t border-white/[0.06]">
+      <div class="mx-auto max-w-6xl px-4 sm:px-6">
+        <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 max-w-3xl md:max-w-none">
+          <div class="max-w-2xl">
+            <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-run-400">// reference</p>
+            <h2 class="font-display text-3xl sm:text-4xl lg:text-5xl mt-3 font-semibold tracking-tight">A small, focused <span class="text-run-400">surface area</span>.</h2>
+            <p class="mt-5 text-lg text-ink-300">If you know <code class="font-mono text-ink-200 bg-white/[0.05] px-1.5 py-0.5 rounded text-[14px]">node:fs/promises</code>, you already know this.</p>
+          </div>
+          <a href="https://github.com/euricojardim/smb3-client#api" target="_blank" rel="noopener" class="inline-flex items-center gap-2 text-sm text-ink-300 hover:text-ink-50 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/50 rounded-lg px-1">
+            Full reference
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </a>
+        </div>
+
+        <div class="mt-12 rounded-2xl border border-white/[0.06] bg-ink-900/60 overflow-hidden">
+          <div class="overflow-x-auto code-scroll">
+            <table class="w-full text-sm">
+              <caption class="sr-only">Public methods on the smb3-client Client class</caption>
+              <thead class="bg-white/[0.02] text-left text-[11px] uppercase tracking-wider font-mono text-ink-500">
+                <tr>
+                  <th scope="col" class="py-3 px-5 font-medium">Method</th>
+                  <th scope="col" class="py-3 px-5 font-medium">Category</th>
+                  <th scope="col" class="py-3 px-5 font-medium">Description</th>
+                  <th scope="col" class="py-3 px-5 font-medium text-right">Returns</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/[0.05] [&_tr:hover]:bg-white/[0.02]">
+                <tr><td class="py-3 px-5 font-mono text-run-400">connect()</td><td class="py-3 px-5 text-ink-400">Session</td><td class="py-3 px-5 text-ink-200">Open TCP/445 connection, negotiate dialect, authenticate.</td><td class="py-3 px-5 font-mono text-right text-ink-400">Promise&lt;void&gt;</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">close()</td><td class="py-3 px-5 text-ink-400">Session</td><td class="py-3 px-5 text-ink-200">Tear down the session and release the socket.</td><td class="py-3 px-5 font-mono text-right text-ink-400">Promise&lt;void&gt;</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">readFile(path)</td><td class="py-3 px-5 text-ink-400">File</td><td class="py-3 px-5 text-ink-200">Read the entire contents of a file.</td><td class="py-3 px-5 font-mono text-right text-ink-400">Promise&lt;Buffer&gt;</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">writeFile(path, data)</td><td class="py-3 px-5 text-ink-400">File</td><td class="py-3 px-5 text-ink-200">Write a buffer or string atomically.</td><td class="py-3 px-5 font-mono text-right text-ink-400">Promise&lt;void&gt;</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">rm(path)</td><td class="py-3 px-5 text-ink-400">File</td><td class="py-3 px-5 text-ink-200">Delete a file.</td><td class="py-3 px-5 font-mono text-right text-ink-400">Promise&lt;void&gt;</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">rename(from, to)</td><td class="py-3 px-5 text-ink-400">File</td><td class="py-3 px-5 text-ink-200">Move or rename a file/directory.</td><td class="py-3 px-5 font-mono text-right text-ink-400">Promise&lt;void&gt;</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">stat(path)</td><td class="py-3 px-5 text-ink-400">Metadata</td><td class="py-3 px-5 text-ink-200">Get size, timestamps, and SMB attributes.</td><td class="py-3 px-5 font-mono text-right text-ink-400">Promise&lt;Stats&gt;</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">readdir(path)</td><td class="py-3 px-5 text-ink-400">Directory</td><td class="py-3 px-5 text-ink-200">List directory entries (optionally with metadata).</td><td class="py-3 px-5 font-mono text-right text-ink-400">Promise&lt;Entry[]&gt;</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">mkdir(path)</td><td class="py-3 px-5 text-ink-400">Directory</td><td class="py-3 px-5 text-ink-200">Create a directory.</td><td class="py-3 px-5 font-mono text-right text-ink-400">Promise&lt;void&gt;</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">rmdir(path)</td><td class="py-3 px-5 text-ink-400">Directory</td><td class="py-3 px-5 text-ink-200">Remove an empty directory.</td><td class="py-3 px-5 font-mono text-right text-ink-400">Promise&lt;void&gt;</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">createReadStream(path)</td><td class="py-3 px-5 text-ink-400">Streams</td><td class="py-3 px-5 text-ink-200">Stream a file's contents (Readable).</td><td class="py-3 px-5 font-mono text-right text-ink-400">Readable</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">createWriteStream(path)</td><td class="py-3 px-5 text-ink-400">Streams</td><td class="py-3 px-5 text-ink-200">Write to a file in chunks (Writable).</td><td class="py-3 px-5 font-mono text-right text-ink-400">Writable</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">watch(path)</td><td class="py-3 px-5 text-ink-400">Events</td><td class="py-3 px-5 text-ink-200">Subscribe to directory change notifications.</td><td class="py-3 px-5 font-mono text-right text-ink-400">AsyncIterable</td></tr>
+                <tr><td class="py-3 px-5 font-mono text-run-400">listShares()</td><td class="py-3 px-5 text-ink-400">Discovery</td><td class="py-3 px-5 text-ink-200">Enumerate shares on the server via DCE/RPC.</td><td class="py-3 px-5 font-mono text-right text-ink-400">Promise&lt;Share[]&gt;</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── COMPATIBILITY ───────── -->
+    <section id="compat" class="py-24 sm:py-32 border-t border-white/[0.06] bg-gradient-to-b from-transparent via-ink-900/30 to-transparent">
+      <div class="mx-auto max-w-6xl px-4 sm:px-6">
+        <div class="max-w-2xl">
+          <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-run-400">// compatibility</p>
+          <h2 class="font-display text-3xl sm:text-4xl lg:text-5xl mt-3 font-semibold tracking-tight">Negotiates with anything that <span class="text-run-400">speaks SMB 2 or 3</span>.</h2>
+        </div>
+
+        <div class="mt-12 grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <article class="relative rounded-2xl border border-white/[0.06] bg-ink-900/60 p-6">
+            <div class="flex items-center justify-between">
+              <h3 class="font-display text-ink-50">SMB 2.1</h3>
+              <span class="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-run-500/10 text-run-400 border border-run-500/20">Stable</span>
+            </div>
+            <p class="text-sm text-ink-400 mt-2">Legacy Windows servers and Samba ≥ 4.</p>
+          </article>
+          <article class="relative rounded-2xl border border-white/[0.06] bg-ink-900/60 p-6">
+            <div class="flex items-center justify-between">
+              <h3 class="font-display text-ink-50">SMB 3.0</h3>
+              <span class="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-run-500/10 text-run-400 border border-run-500/20">Stable</span>
+            </div>
+            <p class="text-sm text-ink-400 mt-2">Windows Server 2012+, signing enforced.</p>
+          </article>
+          <article class="relative rounded-2xl border border-white/[0.06] bg-ink-900/60 p-6">
+            <div class="flex items-center justify-between">
+              <h3 class="font-display text-ink-50">SMB 3.0.2</h3>
+              <span class="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-run-500/10 text-run-400 border border-run-500/20">Stable</span>
+            </div>
+            <p class="text-sm text-ink-400 mt-2">Windows 8.1 / Server 2012 R2.</p>
+          </article>
+          <article class="relative rounded-2xl border border-white/[0.06] bg-ink-900/60 p-6">
+            <div class="flex items-center justify-between">
+              <h3 class="font-display text-ink-50">SMB 3.1.1</h3>
+              <span class="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-run-500/10 text-run-400 border border-run-500/20">Stable</span>
+            </div>
+            <p class="text-sm text-ink-400 mt-2">Windows 10 / 11, Server 2016+.</p>
+          </article>
+        </div>
+
+        <!-- Requirements -->
+        <div class="mt-10 grid md:grid-cols-3 gap-4">
+          <div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+            <div class="flex items-center gap-3">
+              <span class="grid place-items-center w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="currentColor" aria-hidden="true"><path d="M11.998 24c-.321 0-.641-.084-.922-.247l-2.936-1.737c-.438-.245-.224-.332-.08-.383.585-.203.703-.25 1.328-.604.065-.037.151-.023.218.017l2.256 1.339c.082.045.197.045.272 0l8.795-5.076c.082-.047.134-.141.134-.238V6.921c0-.099-.053-.192-.135-.241L11.998 1.605c-.081-.046-.197-.046-.275 0L2.952 6.681c-.083.048-.137.142-.137.241v10.151c0 .098.054.19.137.234l2.409 1.391c1.307.654 2.108-.116 2.108-.89V7.787c0-.142.114-.253.255-.253h1.115c.139 0 .254.111.254.253v10.021c0 1.745-.95 2.745-2.604 2.745-.508 0-.909 0-2.026-.551l-2.307-1.33C.764 18.181 0 16.83 0 15.378V5.227c0-1.452.764-2.803 2.027-3.546L10.823.05c1.222-.625 2.85-.625 4.062 0l8.795 5.078c1.263.748 2.027 2.094 2.027 3.546v10.151c0 1.453-.764 2.803-2.027 3.547l-8.795 5.082c-.281.165-.6.247-.93.247m2.658-6.992c-3.848 0-4.657-1.766-4.657-3.249 0-.142.114-.253.255-.253h1.135c.123 0 .227.089.252.21.171 1.156.681 1.74 3.014 1.74 1.858 0 2.648-.42 2.648-1.406 0-.568-.225-.99-3.112-1.274-2.413-.237-3.906-.772-3.906-2.699 0-1.776 1.498-2.835 4.011-2.835 2.821 0 4.219.98 4.4 3.083a.255.255 0 0 1-.067.198.27.27 0 0 1-.187.083h-1.14a.252.252 0 0 1-.245-.199c-.275-1.214-.939-1.604-2.762-1.604-2.043 0-2.281.711-2.281 1.246 0 .647.281.836 3.018 1.198 2.711.358 3.999.867 3.999 2.768.001 1.916-1.602 3.018-4.401 3.018"/></svg>
+              </span>
+              <div>
+                <div class="text-ink-100 font-medium">Node.js</div>
+                <div class="text-xs text-ink-500">Version 20.0 or newer</div>
+              </div>
+            </div>
+          </div>
+          <div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+            <div class="flex items-center gap-3">
+              <span class="grid place-items-center w-9 h-9 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-300">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="currentColor" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
+              </span>
+              <div>
+                <div class="text-ink-100 font-medium">Windows server</div>
+                <div class="text-xs text-ink-500">TCP/445 reachable</div>
+              </div>
+            </div>
+          </div>
+          <div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+            <div class="flex items-center gap-3">
+              <span class="grid place-items-center w-9 h-9 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-300">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="currentColor" aria-hidden="true"><path d="M1.125 0C.502 0 0 .502 0 1.125v21.75C0 23.498.502 24 1.125 24h21.75C23.498 24 24 23.498 24 22.875V1.125C24 .502 23.498 0 22.875 0H1.125zm17.363 9.75c.612 0 1.154.037 1.627.111v1.872a4.7 4.7 0 0 0-.726-.203 3.49 3.49 0 0 0-.795-.094c-.46 0-.873.062-1.235.184-.36.123-.667.293-.92.51a2.1 2.1 0 0 0-.567.79c-.13.32-.196.677-.196 1.072v3.917h-2.358v-7.95h2.358v1.34h.026a3 3 0 0 1 .526-.733 3.7 3.7 0 0 1 .727-.55c.275-.16.57-.282.881-.366.314-.084.628-.126.952-.126zM5.844 11.4c.42 0 .817.063 1.196.188.378.124.71.302.998.535.288.232.515.514.683.846.168.332.252.7.252 1.105 0 .402-.084.766-.252 1.094-.168.328-.396.604-.683.83-.288.226-.624.4-1.005.522-.382.122-.795.183-1.232.183-.443 0-.85-.061-1.221-.184-.371-.122-.69-.295-.96-.518-.27-.224-.483-.493-.638-.808-.156-.314-.234-.665-.234-1.052 0-.395.078-.751.234-1.068.155-.317.367-.586.638-.808.27-.222.589-.394.96-.516.371-.121.778-.183 1.221-.183z"/></svg>
+              </span>
+              <div>
+                <div class="text-ink-100 font-medium">TypeScript</div>
+                <div class="text-xs text-ink-500">5.0+ recommended</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── ROADMAP ───────── -->
+    <section id="roadmap" class="py-24 sm:py-32 border-t border-white/[0.06]">
+      <div class="mx-auto max-w-6xl px-4 sm:px-6">
+        <div class="max-w-2xl">
+          <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-run-400">// roadmap</p>
+          <h2 class="font-display text-3xl sm:text-4xl lg:text-5xl mt-3 font-semibold tracking-tight">Honest about what works <span class="text-run-400">and what doesn't</span>.</h2>
+          <p class="mt-5 text-lg text-ink-300">This is an alpha. Here's exactly what ships today and what's tracked for later.</p>
+        </div>
+
+        <div class="mt-12 grid md:grid-cols-2 gap-4">
+          <!-- Supported -->
+          <div class="rounded-2xl border border-run-500/20 bg-run-500/[0.04] p-6">
+            <div class="flex items-center gap-2">
+              <span class="grid place-items-center w-8 h-8 rounded-lg bg-run-500/15 text-run-400 border border-run-500/30">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
+              <h3 class="font-display text-lg text-ink-50">Supported today</h3>
+            </div>
+            <ul class="mt-5 space-y-3 text-sm text-ink-300">
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-run-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg><span>Dialect negotiation (SMB 2.1 → 3.1.1)</span></li>
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-run-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg><span>NTLMv2 authentication via minimal SPNEGO</span></li>
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-run-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg><span>Workgroup, local and AD accounts</span></li>
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-run-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg><span>HMAC-SHA256 and AES-128-CMAC signing</span></li>
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-run-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg><span>read, write, create, delete, rename, mkdir, rmdir, stat, readdir</span></li>
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-run-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg><span>Streaming I/O via Readable/Writable</span></li>
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-run-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg><span>Directory change notifications (AsyncIterable)</span></li>
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-run-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg><span>Share enumeration via DCE/RPC</span></li>
+            </ul>
+          </div>
+
+          <!-- Not yet -->
+          <div class="rounded-2xl border border-white/[0.06] bg-ink-900/60 p-6">
+            <div class="flex items-center gap-2">
+              <span class="grid place-items-center w-8 h-8 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </span>
+              <h3 class="font-display text-lg text-ink-50">Tracked, not yet shipped</h3>
+            </div>
+            <ul class="mt-5 space-y-3 text-sm text-ink-300">
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-ink-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg><span>SMB 3.x encryption (AES-CCM / AES-GCM)</span></li>
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-ink-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Kerberos authentication mechanisms</span></li>
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-ink-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg><span>Compound (batched) requests</span></li>
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-ink-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg><span>DFS referrals</span></li>
+              <li class="flex gap-3"><svg viewBox="0 0 24 24" class="w-4 h-4 text-ink-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg><span>NetBIOS over TCP/139 transport</span></li>
+            </ul>
+            <p class="mt-6 text-xs text-ink-500 leading-relaxed">Want one of these prioritized? <a href="https://github.com/euricojardim/smb3-client/issues" target="_blank" rel="noopener" class="text-run-400 hover:text-run-300 underline-offset-2 hover:underline transition-colors">Open an issue</a> with your use case.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── CONTRIBUTE / CTA ───────── -->
+    <section class="py-24 sm:py-32 border-t border-white/[0.06] relative overflow-hidden">
+      <div class="glow-orb top-0 left-1/2 -translate-x-1/2 w-[680px] h-[480px] rounded-full bg-run-500/15" aria-hidden="true"></div>
+      <div class="relative mx-auto max-w-4xl px-4 sm:px-6 text-center">
+        <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-run-400">// community</p>
+        <h2 class="font-display text-3xl sm:text-4xl lg:text-5xl mt-3 font-semibold tracking-tight">Open source, MIT, <span class="text-run-400">contributors welcome</span>.</h2>
+        <p class="mt-5 text-lg text-ink-300 max-w-2xl mx-auto">Found a bug, missing a feature, or just want to read through SMB packet parsing in TypeScript? The repo is the best place to start.</p>
+
+        <div class="mt-10 flex flex-wrap gap-3 justify-center">
+          <a href="https://github.com/euricojardim/smb3-client" target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-run-500 hover:bg-run-400 text-ink-950 font-semibold px-5 py-3 rounded-xl shadow-glow-run transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+            Star the repo
+          </a>
+          <a href="https://github.com/euricojardim/smb3-client/issues" target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.16] text-ink-100 font-medium px-5 py-3 rounded-xl transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/60">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Open an issue
+          </a>
+          <a href="https://github.com/euricojardim/smb3-client/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.16] text-ink-100 font-medium px-5 py-3 rounded-xl transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run-500/60">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+            Contributing guide
+          </a>
+        </div>
+
+        <p class="mt-10 text-xs font-mono text-ink-500">
+          Security disclosures: see
+          <a href="https://github.com/euricojardim/smb3-client/blob/main/SECURITY.md" target="_blank" rel="noopener" class="text-ink-300 hover:text-run-400 transition-colors underline-offset-2 hover:underline">SECURITY.md</a>
+          — please don't open public issues for vulnerabilities.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ───────── FOOTER ───────── -->
+  <footer class="border-t border-white/[0.06] bg-ink-950">
+    <div class="mx-auto max-w-6xl px-4 sm:px-6 py-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <span aria-hidden="true" class="grid place-items-center w-7 h-7 rounded-lg bg-gradient-to-br from-run-500 to-emerald-700">
+            <svg viewBox="0 0 24 24" class="w-4 h-4 text-ink-950" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h16" /></svg>
+          </span>
+          <span class="font-display font-semibold tracking-tight">smb3-client</span>
+        </div>
+        <p class="mt-3 text-sm text-ink-400 max-w-xs">Pure-TypeScript SMB 3.x client for Node.js. MIT licensed.</p>
+      </div>
+
+      <div>
+        <h4 class="font-mono text-[11px] uppercase tracking-wider text-ink-500">Project</h4>
+        <ul class="mt-3 space-y-2 text-sm">
+          <li><a href="https://github.com/euricojardim/smb3-client" target="_blank" rel="noopener" class="text-ink-300 hover:text-run-400 transition-colors cursor-pointer">Repository</a></li>
+          <li><a href="https://www.npmjs.com/package/smb3-client" target="_blank" rel="noopener" class="text-ink-300 hover:text-run-400 transition-colors cursor-pointer">npm package</a></li>
+          <li><a href="https://github.com/euricojardim/smb3-client/blob/main/CHANGELOG.md" target="_blank" rel="noopener" class="text-ink-300 hover:text-run-400 transition-colors cursor-pointer">Changelog</a></li>
+          <li><a href="https://github.com/euricojardim/smb3-client/blob/main/LICENSE" target="_blank" rel="noopener" class="text-ink-300 hover:text-run-400 transition-colors cursor-pointer">License (MIT)</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4 class="font-mono text-[11px] uppercase tracking-wider text-ink-500">Resources</h4>
+        <ul class="mt-3 space-y-2 text-sm">
+          <li><a href="#quickstart" class="text-ink-300 hover:text-run-400 transition-colors cursor-pointer">Quick Start</a></li>
+          <li><a href="#api" class="text-ink-300 hover:text-run-400 transition-colors cursor-pointer">API Reference</a></li>
+          <li><a href="#compat" class="text-ink-300 hover:text-run-400 transition-colors cursor-pointer">Compatibility</a></li>
+          <li><a href="#roadmap" class="text-ink-300 hover:text-run-400 transition-colors cursor-pointer">Roadmap</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4 class="font-mono text-[11px] uppercase tracking-wider text-ink-500">Community</h4>
+        <ul class="mt-3 space-y-2 text-sm">
+          <li><a href="https://github.com/euricojardim/smb3-client/issues" target="_blank" rel="noopener" class="text-ink-300 hover:text-run-400 transition-colors cursor-pointer">Issues</a></li>
+          <li><a href="https://github.com/euricojardim/smb3-client/pulls" target="_blank" rel="noopener" class="text-ink-300 hover:text-run-400 transition-colors cursor-pointer">Pull requests</a></li>
+          <li><a href="https://github.com/euricojardim/smb3-client/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener" class="text-ink-300 hover:text-run-400 transition-colors cursor-pointer">Contributing</a></li>
+          <li><a href="https://github.com/euricojardim/smb3-client/blob/main/SECURITY.md" target="_blank" rel="noopener" class="text-ink-300 hover:text-run-400 transition-colors cursor-pointer">Security policy</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="border-t border-white/[0.05]">
+      <div class="mx-auto max-w-6xl px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs text-ink-500">
+        <p>© <span id="year">2026</span> Eurico Jardim. Released under the MIT License.</p>
+        <p class="font-mono">$ <span class="text-ink-300">npm i smb3-client</span><span class="inline-block w-1.5 h-3 bg-ink-500 ml-1 align-[-1px] animate-caret"></span></p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Copy-to-clipboard for any [data-copy] button.
+    document.querySelectorAll('.copy-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const target = document.querySelector(btn.getAttribute('data-copy'));
+        if (!target) return;
+        const text = target.innerText.trim();
+        try { await navigator.clipboard.writeText(text); }
+        catch { /* clipboard unavailable; no-op */ }
+
+        const copyIcon = btn.querySelector('.copy-icon');
+        const checkIcon = btn.querySelector('.check-icon');
+        const label = btn.querySelector('.copy-label');
+        if (copyIcon) copyIcon.classList.add('hidden');
+        if (checkIcon) checkIcon.classList.remove('hidden');
+        if (label) label.textContent = 'copied';
+        setTimeout(() => {
+          if (copyIcon) copyIcon.classList.remove('hidden');
+          if (checkIcon) checkIcon.classList.add('hidden');
+          if (label) label.textContent = 'copy';
+        }, 1600);
+      });
+    });
+
+    // Auto-update copyright year.
+    const y = document.getElementById('year');
+    if (y) y.textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
