@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { FakeTransport } from "../../helpers/fakeTransport.js";
 import { Connection } from "../../../src/connection/connection.js";
 import { Session, type SigningMode } from "../../../src/session/session.js";
+import { Client } from "../../../src/client.js";
+import { SecurityMode } from "../../../src/wire/commands.js";
 
 describe("Session signing mode plumbing", () => {
   it("accepts a SigningMode in the constructor opts and exposes it via a typed export", () => {
@@ -25,9 +27,6 @@ describe("Session signing mode plumbing", () => {
     expect(s).toBeInstanceOf(Session);
   });
 });
-
-import { Client } from "../../../src/client.js";
-import { SecurityMode, SmbCommand } from "../../../src/wire/commands.js";
 
 describe("NEGOTIATE SecurityMode advertisement", () => {
   // Captures the first outbound frame the Client.connect() flow produces (the
