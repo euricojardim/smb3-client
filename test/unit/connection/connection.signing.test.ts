@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { FakeTransport } from "../../helpers/fakeTransport.js";
 import { Connection } from "../../../src/connection/connection.js";
 import { sign } from "../../../src/connection/signing.js";
-import { Dialect, SmbCommand, HeaderFlag } from "../../../src/wire/commands.js";
+import { Dialect, SmbCommand } from "../../../src/wire/commands.js";
 import { encodeHeader } from "../../../src/wire/smb2-header.js";
 
 describe("Connection.send creditCharge", () => {
