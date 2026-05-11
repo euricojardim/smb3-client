@@ -73,6 +73,7 @@ export async function* watchOpen(open: Open, opts: WatchOptions = {}): AsyncGene
         sessionId: open.tree.session.sessionId,
         treeId: open.tree.treeId,
         ...(signing !== undefined ? { signing } : {}),
+        encrypt: open.tree.encryptRequired,
         creditCharge: 1,
       });
       lastMessageId = capturedMessageId;

@@ -28,6 +28,7 @@ export async function readdirAll(open: Open, pattern = "*"): Promise<DirEntry[]>
       sessionId: open.tree.session.sessionId,
       treeId: open.tree.treeId,
       ...(signing !== undefined ? { signing } : {}),
+      encrypt: open.tree.encryptRequired,
       creditCharge: 1,
     });
     if (resp.header.status === NTStatus.STATUS_NO_MORE_FILES) break;

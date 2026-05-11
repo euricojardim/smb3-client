@@ -22,7 +22,7 @@ import { splitSharePath, toSmbPath } from "./paths.js";
 import type { ClientOptions, Dirent, FileStat, ChangeEvent, ShareInfo } from "./types.js";
 import { encodeSetInfoRequest, encodeFileRenameInformation } from "./wire/structs/setInfo.js";
 import { InfoType, FileInformationClass } from "./wire/structs/queryInfo.js";
-import { SmbCommand, isSuccess, statusName } from "./wire/commands.js";
+import { SmbCommand, Cipher, Capability, isSuccess, statusName } from "./wire/commands.js";
 import { SmbError } from "./errors.js";
 import { encodeWriteRequest, decodeWriteResponse } from "./wire/structs/write.js";
 import { encodeReadRequest, decodeReadResponse } from "./wire/structs/read.js";
@@ -51,12 +51,25 @@ export class Client {
       timeoutMs: this.opts.connectTimeout ?? 10_000,
     });
     this.conn = new Connection(transport);
-    await this.conn.open();
-    this.session = new Session(this.conn, {
-      username: this.opts.username,
-      password: this.opts.password,
-      domain: this.opts.domain ?? "",
-    });
+    const encryption = this.opts.encryption ?? "if-offered";
+    const ciphers =
+      encryption === "disabled"
+        ? []
+        : [Cipher.AES_128_GCM, Cipher.AES_128_CCM, Cipher.AES_256_GCM, Cipher.AES_256_CCM];
+    // Capability.ENCRYPTION signals encryption support to SMB 3.0 / 3.0.2 servers,
+    // which don't use the EncryptionCapabilities negotiate context.
+    const capabilities =
+      ciphers.length > 0 ? Capability.LARGE_MTU | Capability.ENCRYPTION : Capability.LARGE_MTU;
+    await this.conn.open({ ciphers, capabilities });
+    this.session = new Session(
+      this.conn,
+      {
+        username: this.opts.username,
+        password: this.opts.password,
+        domain: this.opts.domain ?? "",
+      },
+      { encryption, ciphers },
+    );
     await this.session.setup();
     this.state = "connected";
   }
@@ -211,6 +224,7 @@ export class Client {
         sessionId: tree.session.sessionId,
         treeId: tree.treeId,
         ...(signing !== undefined ? { signing } : {}),
+        encrypt: tree.encryptRequired,
         creditCharge: 1,
       });
       if (!isSuccess(resp.header.status)) {
@@ -418,6 +432,7 @@ export class Client {
       sessionId: open.tree.session.sessionId,
       treeId: open.tree.treeId,
       ...(signW !== undefined ? { signing: signW } : {}),
+      encrypt: open.tree.encryptRequired,
       creditCharge: 1,
     });
     if (!isSuccess(writeResp.header.status)) {
@@ -434,6 +449,7 @@ export class Client {
       sessionId: open.tree.session.sessionId,
       treeId: open.tree.treeId,
       ...(signR !== undefined ? { signing: signR } : {}),
+      encrypt: open.tree.encryptRequired,
       creditCharge: 1,
     });
     if (!isSuccess(readResp.header.status)) {

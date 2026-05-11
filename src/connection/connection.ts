@@ -18,6 +18,7 @@ import { encodeNegotiateRequest, decodeNegotiateResponse, NegotiateResponse } fr
 import { encodeCancelRequest } from "../wire/structs/cancel.js";
 import { CreditWindow } from "./credits.js";
 import { PreauthHash } from "./preauth.js";
+import { type Encryptor, isTransformHeader } from "./encryption.js";
 import { SmbProtocolError } from "../errors.js";
 
 export interface ConnectionOpenOptions {
@@ -25,6 +26,7 @@ export interface ConnectionOpenOptions {
   dialects?: number[];
   capabilities?: number;
   securityMode?: number;
+  ciphers?: number[];
 }
 
 export interface NegotiatedConnection {
@@ -37,6 +39,7 @@ export interface NegotiatedConnection {
   maxTransactSize: number;
   preauthHashAlg?: number;
   preauthSalt?: Buffer;
+  cipherIds?: number[];
   securityBuffer: Buffer;
 }
 
@@ -44,6 +47,7 @@ interface PendingRequest {
   resolve: (v: { header: SmbHeader; body: Buffer }) => void;
   reject: (err: unknown) => void;
   expectsAsync: boolean;
+  encrypted: boolean;
 }
 
 export interface SendOptions {
@@ -52,6 +56,7 @@ export interface SendOptions {
   creditCharge?: number;
   flags?: number;
   signing?: { sign: (msg: Buffer) => Buffer };
+  encrypt?: boolean;
 }
 
 export class Connection extends EventEmitter {
@@ -66,6 +71,8 @@ export class Connection extends EventEmitter {
   private closed = false;
   private verifier: ((frame: Buffer, sig: Buffer) => boolean) | null = null;
   private signCancel: ((msg: Buffer) => Buffer) | null = null;
+  private encryptor: Encryptor | null = null;
+  private encryptionRequired = false;
 
   constructor(private readonly transport: Transport) {
     super();
@@ -93,6 +100,7 @@ export class Connection extends EventEmitter {
       capabilities: opts.capabilities ?? Capability.LARGE_MTU,
       securityMode: opts.securityMode ?? SecurityMode.SIGNING_ENABLED,
       preauthSalt,
+      ...(opts.ciphers !== undefined ? { ciphers: opts.ciphers } : {}),
     });
     const result = await this.send(SmbCommand.NEGOTIATE, reqBody, { creditCharge: 0 });
     if (!isSuccess(result.header.status)) {
@@ -113,6 +121,7 @@ export class Connection extends EventEmitter {
       securityBuffer: resp.securityBuffer,
       ...(resp.preauthHashAlg !== undefined ? { preauthHashAlg: resp.preauthHashAlg } : {}),
       ...(resp.preauthSalt !== undefined ? { preauthSalt: resp.preauthSalt } : {}),
+      ...(resp.cipherIds !== undefined ? { cipherIds: resp.cipherIds } : {}),
     };
     this.negotiated = negotiated;
     return this.negotiated;
@@ -128,6 +137,8 @@ export class Connection extends EventEmitter {
     if (charge > 0) await this.credits.take(charge);
     const messageId = this.nextMessageId++;
     const flags = opts.flags ?? 0;
+    const wantEncrypt = opts.encrypt === true && this.encryptor !== null;
+
     let header = encodeHeader({
       command,
       creditCharge: charge,
@@ -139,8 +150,9 @@ export class Connection extends EventEmitter {
       status: 0,
     });
     let frameBuf = Buffer.concat([header, body]);
-    if (opts.signing) {
-      // Set SIGNED flag, sign full frame, write signature back into header bytes.
+    // Encryption supersedes signing for the same PDU (MS-SMB2 §3.1.4.3): the inner
+    // SMB2 header is left unsigned and the TRANSFORM_HEADER's auth tag covers integrity.
+    if (opts.signing && !wantEncrypt) {
       const signedFlags = flags | HeaderFlag.SIGNED;
       header = encodeHeader({
         command,
@@ -157,7 +169,9 @@ export class Connection extends EventEmitter {
       sig.copy(frameBuf, 48); // signature offset within header is 48
     }
 
-    // Pre-auth hash: NEGOTIATE and SESSION_SETUP requests/responses feed it.
+    // Pre-auth hash always feeds on the plaintext PDU. NEGOTIATE and the first
+    // SESSION_SETUP can't be encrypted (no keys yet), so this branch only ever
+    // sees plaintext for those commands in practice.
     if (command === SmbCommand.NEGOTIATE || command === SmbCommand.SESSION_SETUP) {
       this.preauth.update(frameBuf);
     }
@@ -167,9 +181,11 @@ export class Connection extends EventEmitter {
         resolve,
         reject,
         expectsAsync: command === SmbCommand.CHANGE_NOTIFY,
+        encrypted: wantEncrypt,
       });
     });
-    this.transport.send(makeFrame(frameBuf));
+    const wire = wantEncrypt ? this.encryptor!.encrypt(frameBuf) : frameBuf;
+    this.transport.send(makeFrame(wire));
     return promise;
   }
 
@@ -185,7 +201,32 @@ export class Connection extends EventEmitter {
     this.signCancel = fn;
   }
 
-  private onMessage(msg: Buffer): void {
+  setEncryptor(e: Encryptor): void {
+    this.encryptor = e;
+  }
+
+  /** When true, plaintext responses (other than SESSION_SETUP) cause a fatal protocol error. */
+  setEncryptionRequired(v: boolean): void {
+    this.encryptionRequired = v;
+  }
+
+  private onMessage(raw: Buffer): void {
+    let msg = raw;
+    let wasEncrypted = false;
+    if (isTransformHeader(raw)) {
+      if (this.encryptor === null) {
+        this.fail(new SmbProtocolError({ status: 0, message: "received encrypted frame but no encryptor installed" }));
+        return;
+      }
+      try {
+        msg = this.encryptor.decrypt(raw);
+        wasEncrypted = true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.fail(new SmbProtocolError({ status: 0, message: `decrypt failed: ${message}` }));
+        return;
+      }
+    }
     let parsed: ReturnType<typeof decodeHeader>;
     try {
       parsed = decodeHeader(msg);
@@ -196,8 +237,21 @@ export class Connection extends EventEmitter {
     const { header } = parsed;
     const body = Buffer.from(msg.subarray(SMB2_HEADER_SIZE));
 
-    // Verify signature on signed responses when a verifier is registered.
-    if ((header.flags & HeaderFlag.SIGNED) !== 0 && this.verifier !== null) {
+    // MS-SMB2 §3.2.5.1.1: once Session.EncryptData is TRUE, plaintext responses
+    // (other than SESSION_SETUP) must be rejected and the connection dropped.
+    // This blocks an attacker — or a misbehaving server — from silently stripping
+    // encryption after we agreed to use it.
+    if (!wasEncrypted && this.encryptionRequired && header.command !== SmbCommand.SESSION_SETUP) {
+      this.fail(new SmbProtocolError({
+        status: 0,
+        message: "plaintext response received but session requires encryption",
+      }));
+      return;
+    }
+
+    // Signature verification only applies to plaintext frames. Encrypted responses carry
+    // their integrity guarantee in the TRANSFORM_HEADER's auth tag (already verified).
+    if (!wasEncrypted && (header.flags & HeaderFlag.SIGNED) !== 0 && this.verifier !== null) {
       const working = Buffer.from(msg);
       working.fill(0, 48, 64); // zero the Signature field before computing
       const sig = header.signature ?? Buffer.alloc(16);
@@ -279,9 +333,14 @@ export class Connection extends EventEmitter {
     // requires the CANCEL to carry the ASYNC_COMMAND flag and the assigned AsyncId.
     // Look up the asyncId from our tracking map if the caller did not provide one.
     const asyncId = opts.asyncId ?? this.asyncIdByMessageId.get(opts.messageId.toString());
+    // Per MS-SMB2 §3.2.4.24, CANCEL inherits the integrity protection of the original
+    // request: encrypted if the original was encrypted, otherwise signed.
+    const pending =
+      this.pendingByMessageId.get(opts.messageId.toString()) ??
+      (asyncId !== undefined ? this.pendingByAsyncId.get(asyncId.toString()) : undefined);
+    const encryptCancel = pending?.encrypted === true && this.encryptor !== null;
     let flags = asyncId !== undefined ? HeaderFlag.ASYNC_COMMAND : 0;
-    // Per MS-SMB2 §3.2.4.24, CANCEL must be signed when the session has a signing key.
-    if (this.signCancel !== null) {
+    if (!encryptCancel && this.signCancel !== null) {
       flags = flags | HeaderFlag.SIGNED;
     }
     const header = encodeHeader({
@@ -298,13 +357,14 @@ export class Connection extends EventEmitter {
     });
     const body = encodeCancelRequest();
     const frameBuf = Buffer.concat([header, body]);
-    if (this.signCancel !== null) {
+    if (!encryptCancel && this.signCancel !== null) {
       // Signature field (bytes 48..64) is already zeroed by encodeHeader (no signature was passed).
       // Sign over the full frame with zeroed signature, then write the result into the frame.
       const sig = this.signCancel(frameBuf);
       sig.copy(frameBuf, 48);
     }
-    this.transport.send(makeFrame(frameBuf));
+    const wire = encryptCancel ? this.encryptor!.encrypt(frameBuf) : frameBuf;
+    this.transport.send(makeFrame(wire));
   }
 
   close(): void {

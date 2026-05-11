@@ -12,9 +12,15 @@ import {
 import { wrapInitNegToken, wrapNegTokenResp, extractNtlmFromResp } from "./spnego.js";
 import { kdfSp800108CounterHmacSha256 } from "./keys.js";
 import { encodeSessionSetupRequest, decodeSessionSetupResponse } from "../wire/structs/sessionSetup.js";
-import { SmbCommand, NTStatus, Dialect, SecurityMode, isSuccess } from "../wire/commands.js";
+import { SmbCommand, NTStatus, Dialect, SecurityMode, Cipher, isSuccess } from "../wire/commands.js";
 import { SmbAuthError } from "../errors.js";
 import { sign, verify } from "../connection/signing.js";
+import {
+  encryptMessage,
+  decryptMessage,
+  type Encryptor,
+  type EncryptionKeys,
+} from "../connection/encryption.js";
 
 export interface SessionCreds {
   username: string;
@@ -22,15 +28,42 @@ export interface SessionCreds {
   domain?: string;
 }
 
+export type EncryptionMode = "required" | "if-offered" | "disabled";
+
+function pickCipher(offered: number[], preferred: number[]): number | undefined {
+  for (const c of preferred) {
+    if (offered.includes(c)) return c;
+  }
+  return undefined;
+}
+
+function cipherKeyLength(cipherId: number): number {
+  return cipherId === Cipher.AES_256_CCM || cipherId === Cipher.AES_256_GCM ? 32 : 16;
+}
+
 export class Session {
   sessionId: bigint = 0n;
   signingKey: Buffer | null = null;
+  encryptionKeys: EncryptionKeys | null = null;
+  /** True when global encryption mode is "required" — every non-NEGOTIATE/SESSION_SETUP request encrypts. */
+  globalEncrypt = false;
   private closed = false;
+  private readonly mode: EncryptionMode;
+  private readonly preferredCiphers: number[];
 
   constructor(
     private readonly conn: Connection,
     private readonly creds: SessionCreds,
-  ) {}
+    opts: { encryption?: EncryptionMode; ciphers?: number[] } = {},
+  ) {
+    this.mode = opts.encryption ?? "if-offered";
+    this.preferredCiphers = opts.ciphers ?? [
+      Cipher.AES_128_GCM,
+      Cipher.AES_128_CCM,
+      Cipher.AES_256_GCM,
+      Cipher.AES_256_CCM,
+    ];
+  }
 
   async setup(): Promise<void> {
     const negotiated = this.conn.state;
@@ -140,6 +173,101 @@ export class Session {
     this.conn.setVerifier((frame, sig) => verify(frame, sig, signingKey, dialect));
     // Register the cancel signer so CANCEL frames are signed per MS-SMB2 §3.2.4.24.
     this.conn.setCancelSigner((msg) => sign(msg, signingKey, dialect));
+
+    // SMB 3.x message encryption (MS-SMB2 §3.1.4.3 / §3.2.4.1.5).
+    if (this.mode !== "disabled" && this.dialectSupportsEncryption(dialect)) {
+      const cipherId = this.selectCipher(dialect, negotiated.cipherIds);
+      if (cipherId !== undefined) {
+        const keys = this.deriveEncryptionKeys(dialect, exportedSessionKey, cipherId);
+        this.encryptionKeys = keys;
+        const sessionId = this.sessionId;
+        let counter = 1n;
+        const enc: Encryptor = {
+          encrypt: (plaintext: Buffer): Buffer => {
+            const c = counter++;
+            return encryptMessage(plaintext, keys, sessionId, c);
+          },
+          decrypt: (frame: Buffer): Buffer => decryptMessage(frame, keys, sessionId),
+        };
+        this.conn.setEncryptor(enc);
+        this.globalEncrypt = this.mode === "required" || this.mode === "if-offered";
+        // Once we agree to encrypt, the connection refuses plaintext responses
+        // (MS-SMB2 §3.2.5.1.1 — guards against silent downgrade).
+        this.conn.setEncryptionRequired(this.globalEncrypt);
+      } else if (this.mode === "required") {
+        throw new SmbAuthError({
+          status: 0,
+          message: "encryption required but server did not offer a supported cipher",
+        });
+      }
+    } else if (this.mode === "required") {
+      throw new SmbAuthError({
+        status: 0,
+        message: `encryption required but dialect 0x${dialect.toString(16)} does not support it`,
+      });
+    }
+  }
+
+  private dialectSupportsEncryption(dialect: number): boolean {
+    return (
+      dialect === Dialect.SMB_3_0_0 ||
+      dialect === Dialect.SMB_3_0_2 ||
+      dialect === Dialect.SMB_3_1_1
+    );
+  }
+
+  private selectCipher(dialect: number, offeredByServer: number[] | undefined): number | undefined {
+    if (dialect === Dialect.SMB_3_0_0 || dialect === Dialect.SMB_3_0_2) {
+      // Pre-3.1.1: encryption is signalled by the SMB2_GLOBAL_CAP_ENCRYPTION capability bit,
+      // and the cipher is always AES-128-CCM. The server has no per-cipher choice.
+      const conn = this.conn.state;
+      const serverHasEncryption =
+        conn !== null && (conn.capabilities & 0x00000040) !== 0; // Capability.ENCRYPTION
+      return serverHasEncryption ? Cipher.AES_128_CCM : undefined;
+    }
+    // 3.1.1: server picks one cipher from those we offered.
+    if (offeredByServer === undefined || offeredByServer.length === 0) return undefined;
+    const chosen = pickCipher(offeredByServer, this.preferredCiphers);
+    return chosen;
+  }
+
+  private deriveEncryptionKeys(
+    dialect: number,
+    sessionKey: Buffer,
+    cipherId: number,
+  ): EncryptionKeys {
+    const keyLen = cipherKeyLength(cipherId);
+    if (dialect === Dialect.SMB_3_0_0 || dialect === Dialect.SMB_3_0_2) {
+      // Note: "ServerIn " has a trailing ASCII space per MS-SMB2 §3.1.4.2.
+      const encryption = kdfSp800108CounterHmacSha256(
+        sessionKey,
+        Buffer.from("SMB2AESCCM\0", "ascii"),
+        Buffer.from("ServerIn \0", "ascii"),
+        keyLen,
+      );
+      const decryption = kdfSp800108CounterHmacSha256(
+        sessionKey,
+        Buffer.from("SMB2AESCCM\0", "ascii"),
+        Buffer.from("ServerOut\0", "ascii"),
+        keyLen,
+      );
+      return { encryption, decryption, cipherId };
+    }
+    // SMB 3.1.1
+    const preauth = this.conn.preauthDigest();
+    const encryption = kdfSp800108CounterHmacSha256(
+      sessionKey,
+      Buffer.from("SMBC2SCipherKey\0", "ascii"),
+      preauth,
+      keyLen,
+    );
+    const decryption = kdfSp800108CounterHmacSha256(
+      sessionKey,
+      Buffer.from("SMBS2CCipherKey\0", "ascii"),
+      preauth,
+      keyLen,
+    );
+    return { encryption, decryption, cipherId };
   }
 
   async close(): Promise<void> {
@@ -148,10 +276,11 @@ export class Session {
     // LOGOFF body is StructureSize(2) + Reserved(2) = 4 bytes
     const body = Buffer.from([0x04, 0x00, 0x00, 0x00]);
     const signing = this.makeSigning();
-    const sendOpts = signing
-      ? { sessionId: this.sessionId, signing }
-      : { sessionId: this.sessionId };
-    await this.conn.send(SmbCommand.LOGOFF, body, sendOpts);
+    await this.conn.send(SmbCommand.LOGOFF, body, {
+      sessionId: this.sessionId,
+      ...(signing !== undefined ? { signing } : {}),
+      encrypt: this.globalEncrypt,
+    });
   }
 
   makeSigning(): { sign: (msg: Buffer) => Buffer } | undefined {

@@ -65,6 +65,18 @@ export const Capability = {
   ENCRYPTION: 0x00000040,
 } as const;
 
+export const Cipher = {
+  AES_128_CCM: 0x0001,
+  AES_128_GCM: 0x0002,
+  AES_256_CCM: 0x0003,
+  AES_256_GCM: 0x0004,
+} as const;
+export type CipherValue = (typeof Cipher)[keyof typeof Cipher];
+
+export const ShareFlag = {
+  ENCRYPT_DATA: 0x00008000,
+} as const;
+
 export const NTStatus = {
   STATUS_SUCCESS: 0x00000000,
   STATUS_PENDING: 0x00000103,

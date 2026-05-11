@@ -32,9 +32,8 @@ For **security vulnerabilities**, do **not** open a public issue. See
 
 Open an issue first to discuss the design before coding, especially for:
 
-- New SMB2 features (encryption, leases, durable handles, multi-channel,
-  Kerberos, DFS — see "Out of scope" in the design spec for the deliberate
-  v1 omissions).
+- New SMB2 features (leases, durable handles, multi-channel, Kerberos, DFS —
+  see "Out of scope" in the design spec for the deliberate v1 omissions).
 - Public API changes.
 - Architectural refactors.
 

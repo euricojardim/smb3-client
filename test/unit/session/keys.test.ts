@@ -26,4 +26,63 @@ describe("kdfSp800108CounterHmacSha256", () => {
     const out2 = kdfSp800108CounterHmacSha256(key, Buffer.from("LABEL\0", "ascii"), Buffer.from("CONTEXT\0", "ascii"), 16);
     expect(out).toEqual(out2);
   });
+
+  it("produces distinct keys for each SMB 3.x encryption label", () => {
+    // MS-SMB2 §3.1.4.2: encryption keys are derived with distinct labels per direction.
+    const sessionKey = Buffer.alloc(16, 0x42);
+    const preauth = Buffer.alloc(64, 0x77); // SHA-512 size
+
+    const enc30 = kdfSp800108CounterHmacSha256(
+      sessionKey,
+      Buffer.from("SMB2AESCCM\0", "ascii"),
+      Buffer.from("ServerIn \0", "ascii"),
+      16,
+    );
+    const dec30 = kdfSp800108CounterHmacSha256(
+      sessionKey,
+      Buffer.from("SMB2AESCCM\0", "ascii"),
+      Buffer.from("ServerOut\0", "ascii"),
+      16,
+    );
+    const enc311 = kdfSp800108CounterHmacSha256(
+      sessionKey,
+      Buffer.from("SMBC2SCipherKey\0", "ascii"),
+      preauth,
+      16,
+    );
+    const dec311 = kdfSp800108CounterHmacSha256(
+      sessionKey,
+      Buffer.from("SMBS2CCipherKey\0", "ascii"),
+      preauth,
+      16,
+    );
+    // All four are different from each other.
+    const all = [enc30, dec30, enc311, dec311];
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        expect(all[i]).not.toEqual(all[j]);
+      }
+    }
+    // Determinism — same inputs, same output.
+    expect(enc30).toEqual(
+      kdfSp800108CounterHmacSha256(
+        sessionKey,
+        Buffer.from("SMB2AESCCM\0", "ascii"),
+        Buffer.from("ServerIn \0", "ascii"),
+        16,
+      ),
+    );
+  });
+
+  it("derives 32-byte AES-256 keys", () => {
+    const sessionKey = Buffer.alloc(16, 0x42);
+    const preauth = Buffer.alloc(64, 0x88);
+    const out = kdfSp800108CounterHmacSha256(
+      sessionKey,
+      Buffer.from("SMBC2SCipherKey\0", "ascii"),
+      preauth,
+      32,
+    );
+    expect(out.length).toBe(32);
+  });
 });
