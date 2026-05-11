@@ -262,3 +262,60 @@ describe("Connection encryption — downgrade protection", () => {
     expect(got.header.command).toBe(SmbCommand.READ);
   });
 });
+
+describe("Connection — combined signing+encryption", () => {
+  it("under signingRequired=true + encryption installed: accepts encrypted-only frames", async () => {
+    const ft = new FakeTransport();
+    const conn = new Connection(ft);
+    (conn as unknown as { negotiated: unknown }).negotiated = { dialect: Dialect.SMB_3_1_1 };
+    const sessionId = 0xfeedfacen;
+    const keys = makeKeys();
+    const enc = makeEncryptor(keys, sessionId);
+    conn.setEncryptor(enc);
+    conn.setEncryptionRequired(true);
+    conn.setSigningRequired(true);
+
+    // Build a plaintext READ response (unsigned), then encrypt it for transport.
+    const innerHeader = encodeHeader({
+      command: SmbCommand.READ,
+      creditCharge: 1, creditRequestResponse: 1, flags: 0,
+      messageId: 0n, sessionId, treeId: 0, status: 0,
+    });
+    const innerPdu = Buffer.concat([innerHeader, Buffer.alloc(8)]);
+    // The connection decrypts inbound frames using keys.decryption.
+    // So the "server" must encrypt with that same key to produce a frame the connection can decrypt.
+    const serverKeys: EncryptionKeys = { ...keys, encryption: keys.decryption };
+    const transportFrame = encryptMessage(innerPdu, serverKeys, sessionId, 1n);
+
+    const pending = conn.send(SmbCommand.READ, Buffer.alloc(0), { sessionId, encrypt: true });
+    await new Promise((r) => setImmediate(r));
+    ft.emit("message", transportFrame);
+    await expect(pending).resolves.toBeDefined();
+  });
+
+  it("under signingRequired=true + encryption installed: rejects unsigned plaintext frames", async () => {
+    const ft = new FakeTransport();
+    const conn = new Connection(ft);
+    (conn as unknown as { negotiated: unknown }).negotiated = { dialect: Dialect.SMB_3_1_1 };
+    conn.setEncryptor(makeEncryptor(makeKeys(), 1n));
+    conn.setEncryptionRequired(true);
+    conn.setSigningRequired(true);
+
+    const header = encodeHeader({
+      command: SmbCommand.READ,
+      creditCharge: 1, creditRequestResponse: 1, flags: 0,
+      messageId: 0n, sessionId: 1n, treeId: 0, status: 0,
+    });
+    const plaintextFrame = Buffer.concat([header, Buffer.alloc(8)]);
+
+    const failures: unknown[] = [];
+    const pending = conn.send(SmbCommand.READ, Buffer.alloc(0), { sessionId: 1n }).catch((e) => failures.push(e));
+    await new Promise((r) => setImmediate(r));
+    ft.emit("message", plaintextFrame);
+    await pending;
+    expect(failures.length).toBeGreaterThan(0);
+    // Either the encryption-required or the signing-required check can fire here.
+    // What matters is the connection rejected the frame.
+    expect((failures[0] as Error).message).toMatch(/plaintext|signing.*required|unsigned/i);
+  });
+});
