@@ -111,9 +111,11 @@ const client = new Client({
   capability the client is disabling.
 - `"if-offered"` *(default)* — opportunistic. The client signs/encrypts when
   the server agrees, otherwise proceeds without.
-- `"required"` — demanded. The client advertises the requirement in NEGOTIATE,
-  refuses to proceed if the server can't honor it, and rejects post-handshake
-  responses that violate it.
+- `"required"` — demanded. The client refuses to proceed if the server can't
+  honor the requirement, and rejects post-handshake responses that violate it.
+  For signing, the requirement is also advertised in NEGOTIATE via the
+  `SMB2_NEGOTIATE_SIGNING_REQUIRED` security-mode bit; for encryption the
+  enforcement is at session-setup time (no supported cipher offered → error).
 
 `signing: "required"` accepts encrypted responses as satisfying the requirement
 (per MS-SMB2 §3.1.4.3, an encrypted message's inner signature is zero).

@@ -91,8 +91,10 @@ current implementation matter for security review:
 `"disabled"`. These exist for test environments and for interop with servers
 that don't support either feature. Setting both to `"disabled"` produces
 unauthenticated, unencrypted SMB traffic and should not be used against
-production servers. Modern Windows and Samba defaults will reject a session
-that declines signing; expect setup to fail.
+production servers. Windows Server 2019 and later require signing by default; expect setup to fail
+against those servers when `signing: "disabled"` is set. Samba's default
+(`server signing = auto`) offers but does not require signing, so a connection
+with signing disabled will succeed against a default Samba server.
 
 ### Cryptographic primitives
 
