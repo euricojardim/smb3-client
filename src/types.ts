@@ -46,4 +46,5 @@ export interface ClientOptions {
   connectTimeout?: number;
   requestTimeout?: number;
   signing?: "required" | "if-offered";
+  encryption?: "required" | "if-offered" | "disabled";
 }

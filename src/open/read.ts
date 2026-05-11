@@ -36,6 +36,7 @@ export async function readAt(open: Open, offset: bigint, length: number): Promis
     sessionId: open.tree.session.sessionId,
     treeId: open.tree.treeId,
     ...(signing !== undefined ? { signing } : {}),
+    encrypt: open.tree.encryptRequired,
     creditCharge: charge,
   });
   if (resp.header.status === NTStatus.STATUS_END_OF_FILE) return Buffer.alloc(0);

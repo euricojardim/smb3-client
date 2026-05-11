@@ -23,6 +23,7 @@ export async function writeAll(open: Open, offset: bigint, data: Buffer): Promis
       sessionId: open.tree.session.sessionId,
       treeId: open.tree.treeId,
       ...(signing !== undefined ? { signing } : {}),
+      encrypt: open.tree.encryptRequired,
       creditCharge: charge,
     });
     if (!isSuccess(resp.header.status)) {

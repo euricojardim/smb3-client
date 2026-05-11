@@ -64,20 +64,32 @@ current implementation matter for security review:
   mismatch fatally fails the connection.
 - For SMB 3.1.1, the **pre-auth integrity hash** (SHA-512) is computed and fed
   into the signing-key derivation per spec.
-- **SMB 3.x message encryption is not implemented.** All traffic above the
-  signing layer is sent in cleartext. Treat the SMB connection itself as
-  cleartext on the wire — anyone able to read the network can see file
-  contents and metadata, even though they cannot tamper with messages
-  undetected.
-- **SMB 3.1.1 `EncryptionCapabilities` is advertised with zero ciphers** so
-  the server does not select encryption. Servers that *require* encryption
-  will refuse the connection.
+- **SMB 3.x message encryption** (AEAD) is implemented and on by default
+  (`encryption: "if-offered"`). For SMB 3.1.1 the client advertises AES-128-GCM,
+  AES-128-CCM, AES-256-GCM, AES-256-CCM via `EncryptionCapabilities` and the
+  server picks one; for SMB 3.0 / 3.0.2 the `SMB2_GLOBAL_CAP_ENCRYPTION`
+  capability bit is used and the cipher is always AES-128-CCM.
+- **Downgrade protection.** Once a session has agreed to encrypt, the
+  connection refuses any inbound plaintext SMB2 response (other than
+  `SESSION_SETUP`) and fatally fails the connection. This blocks an active
+  attacker — or a misbehaving server — from silently stripping encryption
+  after the negotiation succeeded (MS-SMB2 §3.2.5.1.1).
+- **Per-share mandate.** When the server marks a share with
+  `SMB2_SHAREFLAG_ENCRYPT_DATA`, every subsequent request against that tree is
+  encrypted automatically, regardless of the global `encryption` option. If
+  the session has no encryption keys (e.g. `encryption: "disabled"`), the
+  `TREE_CONNECT` is rejected client-side with a clear error rather than
+  letting the server return a confusing `STATUS_ACCESS_DENIED` on the first
+  file op.
+- **`encryption: "required"`** fails connect when no cipher can be negotiated
+  (e.g. the dialect is 2.x, or a 3.x server doesn't offer encryption). Use
+  this in environments where plaintext SMB is unacceptable.
 
 ### Cryptographic primitives
 
 - All crypto uses Node's `node:crypto` (HMAC-SHA256, AES-128-CMAC built on
-  AES-128-ECB, AES-128-ECB, SHA-512) **except** MD4 and RC4, which are
-  hand-rolled in pure TypeScript.
+  AES-128-ECB, AES-128/256-CCM, AES-128/256-GCM, SHA-512) **except** MD4 and
+  RC4, which are hand-rolled in pure TypeScript.
 - **MD4** is required only for NTLM password hashing (`MD4(UTF-16LE(password))`).
   It is broken as a general-purpose hash; we use it solely because the
   NTLMv2 protocol mandates it. The implementation has been validated against
@@ -105,7 +117,6 @@ current implementation matter for security review:
 The following are explicitly not supported in v1; reports about their absence
 will be filed as enhancement requests rather than security issues:
 
-- SMB 3.x message encryption.
 - Kerberos or any GSS mech other than NTLMSSP.
 - Compound requests, leases, durable handles, multi-channel.
 - DFS referrals.

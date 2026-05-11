@@ -13,6 +13,7 @@ A practical SMB3 file-sharing client for Node.js. Pure TypeScript (ESM, Node 20+
 - Dialects negotiated: SMB 2.1, 3.0, 3.0.2, 3.1.1.
 - Authentication: NTLMv2 wrapped in a minimal SPNEGO token. Username + password (or NT hash) only.
 - Message signing (HMAC-SHA256 for 2.x, AES-128-CMAC for 3.x; SHA-512 pre-auth integrity hash for 3.1.1).
+- SMB 3.x message encryption (AES-128/256, CCM/GCM AEAD modes; auto-enabled for shares with `SMB2_SHAREFLAG_ENCRYPT_DATA`).
 - File operations: read, write, create, delete, rename, mkdir, rmdir.
 - Directory listing and stat.
 - Streaming I/O for large files (Node `Readable` / `Writable`).
@@ -20,7 +21,7 @@ A practical SMB3 file-sharing client for Node.js. Pure TypeScript (ESM, Node 20+
 - Directory change notifications via `SMB2_CHANGE_NOTIFY`, surfaced as an `AsyncIterable<ChangeEvent>`.
 
 ### Out of scope (v1, deliberate)
-SMB 3.x message encryption, Kerberos / GSSAPI mechs other than NTLMSSP, compound requests, leases, durable handles, multi-channel, oplocks, DFS referrals, NetBIOS over TCP/139, IPv6-specific fallback logic, printer/named-pipe ops beyond `srvsvc`, server-to-server copy (`FSCTL_SRV_COPYCHUNK`), recursive `rm`. Anonymous / guest sessions.
+Kerberos / GSSAPI mechs other than NTLMSSP, compound requests, leases, durable handles, multi-channel, oplocks, DFS referrals, NetBIOS over TCP/139, IPv6-specific fallback logic, printer/named-pipe ops beyond `srvsvc`, server-to-server copy (`FSCTL_SRV_COPYCHUNK`), recursive `rm`. Anonymous / guest sessions.
 
 ### Target servers
 - Windows 10 / 11 / Server 2016+ (negotiates 3.1.1).
@@ -80,6 +81,7 @@ src/
     negotiate.ts              # NEGOTIATE encode/decode + dialect logic
     credits.ts                # credit window accounting
     signing.ts                # HMAC-SHA256 + AES-CMAC sign/verify
+    encryption.ts             # SMB 3.x TRANSFORM_HEADER + AES-CCM/GCM AEAD
     preauth.ts                # SMB 3.1.1 pre-auth integrity hash
   session/
     session.ts                # Session lifecycle, key derivation
@@ -165,6 +167,11 @@ When a session is established, every non-`NEGOTIATE`/non-`SESSION_SETUP` request
 - 3.1.1: AES-128-CMAC with `SigningKey = KDF(SessionKey, "SMBSigningKey", PreauthHash)`.
 
 Incoming responses get verified the same way; a mismatch is a fatal connection error (close + reject all pending).
+
+### Encryption (SMB 3.x)
+When the session has encryption keys (negotiated via NEGOTIATE's `EncryptionCapabilities` context for 3.1.1 or the `SMB2_GLOBAL_CAP_ENCRYPTION` capability bit for 3.0/3.0.2), every non-`NEGOTIATE`/non-`SESSION_SETUP` request that the client decides to encrypt is wrapped in a 52-byte `SMB2 TRANSFORM_HEADER` (`0xFD 'SMB'` ProtocolId) followed by AEAD ciphertext over the original SMB2 PDU. Key derivation reuses the SP800-108 KDF: 3.0/3.0.2 uses labels `"SMB2AESCCM"` with contexts `"ServerIn "` (client→server) and `"ServerOut"` (server→client); 3.1.1 uses labels `"SMBC2SCipherKey"` / `"SMBS2CCipherKey"` with the pre-auth hash as context. Nonces are a per-connection counter zero-padded to 11 bytes (CCM) or 12 bytes (GCM). The AAD is bytes 20..52 of the transform header (Nonce..SessionId). Encryption is mutually exclusive with signing for the same PDU — the inner SMB2 header is left unsigned, integrity is carried in the transform header's auth tag. Per MS-SMB2 §3.2.5.5, a tree connection whose response carries `SMB2_SHAREFLAG_ENCRYPT_DATA` mandates encryption on every subsequent request against that tree.
+
+**Downgrade protection.** Once `Session.EncryptData` is TRUE (i.e. we agreed to encrypt during `SESSION_SETUP`), the connection refuses any inbound plaintext SMB2 response other than `SESSION_SETUP` and fatally fails per MS-SMB2 §3.2.5.1.1. This blocks an active attacker — or a buggy server — from silently stripping the transform header after the negotiation succeeded.
 
 ### Disconnect
 `client.close()` sends `LOGOFF` per session and `TREE_DISCONNECT` per cached tree, then ends the socket. Idempotent.
@@ -265,6 +272,7 @@ const client = new Client({
   connectTimeout: 10_000,
   requestTimeout: 30_000,
   signing: "required",  // "required" | "if-offered"; default "required"
+  encryption: "if-offered", // "required" | "if-offered" | "disabled"; default "if-offered"
 });
 
 await client.connect();

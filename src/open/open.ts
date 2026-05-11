@@ -24,6 +24,7 @@ export class Open {
       sessionId: tree.session.sessionId,
       treeId: tree.treeId,
       ...(signing !== undefined ? { signing } : {}),
+      encrypt: tree.encryptRequired,
       creditCharge: 1,
     });
     if (!isSuccess(resp.header.status)) {
@@ -42,6 +43,7 @@ export class Open {
       sessionId: this.tree.session.sessionId,
       treeId: this.tree.treeId,
       ...(signing !== undefined ? { signing } : {}),
+      encrypt: this.tree.encryptRequired,
       creditCharge: 1,
     });
     if (!isSuccess(resp.header.status)) {

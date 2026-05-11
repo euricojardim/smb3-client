@@ -38,6 +38,7 @@
 - Dialect negotiation: SMB 2.1, 3.0, 3.0.2, 3.1.1.
 - Authentication: NTLMv2 wrapped in minimal SPNEGO. Username + password. Workgroup and local accounts; AD users when NTLMv2 is allowed by server policy.
 - Message signing: HMAC-SHA256 (SMB 2.x) and AES-128-CMAC (SMB 3.x); SHA-512 pre-auth integrity for 3.1.1.
+- SMB 3.x message encryption: AES-128-CCM, AES-128-GCM, AES-256-CCM, AES-256-GCM (3.1.1); AES-128-CCM (3.0 / 3.0.2). Auto-enabled on shares with `SMB2_SHAREFLAG_ENCRYPT_DATA`. Once negotiated, plaintext responses are refused (MS-SMB2 §3.2.5.1.1 downgrade protection).
 - File operations: `read`, `write`, `create`, `delete`, `rename`, `mkdir`, `rmdir`, `stat`, `readdir`.
 - Streaming I/O via Node `Readable` / `Writable` and `node:stream/promises` `pipeline`.
 - Directory change notifications (`SMB2 CHANGE_NOTIFY`) as `AsyncIterable<ChangeEvent>`.
@@ -45,7 +46,6 @@
 
 **Not supported (yet)**
 
-- SMB 3.x message encryption.
 - Kerberos / GSSAPI mechanisms other than NTLMSSP.
 - Compound requests, leases, durable handles, multi-channel.
 - DFS referrals.
@@ -100,6 +100,7 @@ const client = new Client({
   connectTimeout: 10_000,   // ms, default 10 000
   requestTimeout: 30_000,   // ms, default 30 000
   signing: "if-offered",    // "required" | "if-offered" (default "if-offered")
+  encryption: "if-offered", // "required" | "if-offered" | "disabled" (default "if-offered")
 });
 ```
 

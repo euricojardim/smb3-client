@@ -7,6 +7,7 @@ export interface NegotiateRequest {
   capabilities: number;
   securityMode: number;
   preauthSalt?: Buffer; // 32 bytes; required if SMB_3_1_1 advertised
+  ciphers?: number[];  // SMB 3.1.1 EncryptionCapabilities cipher IDs, in client preference order
 }
 
 const STRUCT_SIZE_REQ = 36;
@@ -26,12 +27,15 @@ export function encodeNegotiateRequest(req: NegotiateRequest): Buffer {
   w.bytes(req.clientGuid);
 
   if (has311) {
+    const ciphers = req.ciphers ?? [];
+    const ctxCount = 1 + (ciphers.length > 0 ? 1 : 0);
+
     // NegotiateContextOffset (4) + NegotiateContextCount (2) + Reserved2 (2)
     // Offset is from the SMB2 header start; we're encoding the body, so caller
     // adds 64 (header). We compute it relative to body and patch at the end.
     const ctxOffsetPatchAt = w.offset;
     w.u32(0);
-    w.u16(1); // contexts: preauth only (no encryption)
+    w.u16(ctxCount);
     w.u16(0); // Reserved2
 
     // Dialects list (2 * count)
@@ -45,7 +49,6 @@ export function encodeNegotiateRequest(req: NegotiateRequest): Buffer {
     const buf = w.buffer();
     buf.writeUInt32LE(ctxOffsetFromHeader, ctxOffsetPatchAt);
 
-    // Continue appending contexts
     const ctx = new Writer();
     // PreauthIntegrity context: type=1, dataLen, reserved, hashAlgCount(1), saltLen, hashAlg(SHA-512=1), salt(32)
     ctx.u16(NegotiateContextType.PREAUTH_INTEGRITY_CAPABILITIES);
@@ -56,6 +59,16 @@ export function encodeNegotiateRequest(req: NegotiateRequest): Buffer {
     ctx.u16(32); // SaltLength
     ctx.u16(1); // SHA-512
     ctx.bytes(req.preauthSalt!);
+    if (ciphers.length > 0) {
+      ctx.padTo(8);
+      // EncryptionCapabilities context: type=2, dataLen, reserved, cipherCount, ciphers[]
+      ctx.u16(NegotiateContextType.ENCRYPTION_CAPABILITIES);
+      const encDataLen = 2 + 2 * ciphers.length;
+      ctx.u16(encDataLen);
+      ctx.u32(0); // Reserved
+      ctx.u16(ciphers.length);
+      for (const c of ciphers) ctx.u16(c);
+    }
     ctx.padTo(8);
 
     return Buffer.concat([buf, ctx.buffer()]);
