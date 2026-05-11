@@ -462,3 +462,10 @@ Vitest (fast TS, ESM-native, good fixtures support). Prettier + ESLint with `@ty
 - [MS-SRVS] Server Service Remote Protocol (`NetrShareEnum`).
 - [MS-DTYP] / [MS-RPCE] Common data types and DCE/RPC encoding.
 - NIST SP 800-108 — KDF in counter mode.
+
+## Update 2026-05-11: signing is now a functional tri-state
+
+`ClientOptions.signing` accepts `"disabled" | "if-offered" | "required"` and
+behaves analogously to `ClientOptions.encryption`. See
+`docs/superpowers/specs/2026-05-11-signing-tri-state-alignment-design.md` for
+the design.

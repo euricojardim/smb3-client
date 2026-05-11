@@ -99,10 +99,26 @@ const client = new Client({
   password: "s3cr3t",       // required
   connectTimeout: 10_000,   // ms, default 10 000
   requestTimeout: 30_000,   // ms, default 30 000
-  signing: "if-offered",    // "required" | "if-offered" (default "if-offered")
-  encryption: "if-offered", // "required" | "if-offered" | "disabled" (default "if-offered")
+  signing: "if-offered",    // "disabled" | "if-offered" | "required" (default "if-offered")
+  encryption: "if-offered", // "disabled" | "if-offered" | "required" (default "if-offered")
 });
 ```
+
+**`signing` and `encryption` semantics:**
+
+- `"disabled"` — opt out. The client will not sign (or encrypt) outgoing
+  messages. Setup fails fast if the server's NEGOTIATE response demands the
+  capability the client is disabling.
+- `"if-offered"` *(default)* — opportunistic. The client signs/encrypts when
+  the server agrees, otherwise proceeds without.
+- `"required"` — demanded. The client advertises the requirement in NEGOTIATE,
+  refuses to proceed if the server can't honor it, and rejects post-handshake
+  responses that violate it.
+
+`signing: "required"` accepts encrypted responses as satisfying the requirement
+(per MS-SMB2 §3.1.4.3, an encrypted message's inner signature is zero).
+Combining `signing: "required"` with `encryption: "required"` is supported and
+gives both confidentiality and integrity on every post-handshake message.
 
 ### `connect(): Promise<void>`
 
