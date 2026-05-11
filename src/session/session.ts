@@ -186,8 +186,11 @@ export class Session {
     // Register the verifier on the connection so every subsequent signed response is checked.
     const signingKey = this.signingKey!;
     this.conn.setVerifier((frame, sig) => verify(frame, sig, signingKey, dialect));
-    // Register the cancel signer so CANCEL frames are signed per MS-SMB2 §3.2.4.24.
-    this.conn.setCancelSigner((msg) => sign(msg, signingKey, dialect));
+    // Under signing=disabled, leave the cancel signer unregistered so CANCEL frames
+    // also go out unsigned. Connection's CANCEL path is null-safe on this.signCancel.
+    if (this.signingMode !== "disabled") {
+      this.conn.setCancelSigner((msg) => sign(msg, signingKey, dialect));
+    }
 
     // SMB 3.x message encryption (MS-SMB2 §3.1.4.3 / §3.2.4.1.5).
     if (this.mode !== "disabled" && this.dialectSupportsEncryption(dialect)) {
@@ -299,6 +302,7 @@ export class Session {
   }
 
   makeSigning(): { sign: (msg: Buffer) => Buffer } | undefined {
+    if (this.signingMode === "disabled") return undefined;
     const key = this.signingKey;
     const dialect = this.conn.state?.dialect;
     if (!key || !dialect) return undefined;
