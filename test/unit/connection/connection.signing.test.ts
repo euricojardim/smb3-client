@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { FakeTransport } from "../../helpers/fakeTransport.js";
 import { Connection } from "../../../src/connection/connection.js";
 import { sign } from "../../../src/connection/signing.js";
-import { Dialect, SmbCommand } from "../../../src/wire/commands.js";
+import { Dialect, HeaderFlag, SmbCommand } from "../../../src/wire/commands.js";
 import { encodeHeader } from "../../../src/wire/smb2-header.js";
 
 describe("Connection.send creditCharge", () => {
@@ -148,5 +148,51 @@ describe("Connection inbound enforcement — signing required", () => {
     await new Promise((r) => setImmediate(r));
     ft.emit("message", plaintextFrame(SmbCommand.READ, 0n));
     await expect(pending).resolves.toBeDefined();
+  });
+});
+
+describe("Connection outbound — signing behavior at the wire level", () => {
+  it("does NOT sign the outbound frame when no signing option is provided", async () => {
+    const ft = new FakeTransport();
+    let captured: Buffer | null = null;
+    ft.onSend((frame) => { captured = Buffer.from(frame.subarray(4)); });
+    const conn = new Connection(ft);
+    (conn as unknown as { negotiated: unknown }).negotiated = { dialect: Dialect.SMB_3_1_1 };
+
+    // Mimic Session.makeSigning() returning undefined under "disabled" mode:
+    // the caller simply omits the `signing` option.
+    void conn.send(SmbCommand.READ, Buffer.alloc(8), { sessionId: 1n });
+    await new Promise((r) => setImmediate(r));
+
+    expect(captured).not.toBeNull();
+    const flags = captured!.readUInt32LE(16);
+    expect(flags & HeaderFlag.SIGNED).toBe(0);
+    // Signature field stays zero.
+    const sigSlice = captured!.subarray(48, 64);
+    expect(sigSlice.every((b) => b === 0)).toBe(true);
+  });
+
+  it("signs the outbound frame when a signing function is provided", async () => {
+    const ft = new FakeTransport();
+    let captured: Buffer | null = null;
+    ft.onSend((frame) => { captured = Buffer.from(frame.subarray(4)); });
+    const conn = new Connection(ft);
+    (conn as unknown as { negotiated: unknown }).negotiated = { dialect: Dialect.SMB_3_1_1 };
+
+    // Mimic Session.makeSigning() returning a signer under "required" or "if-offered" modes.
+    // The exact signing function doesn't matter; just confirm Connection installs the flag
+    // and writes a non-zero signature.
+    void conn.send(SmbCommand.READ, Buffer.alloc(8), {
+      sessionId: 1n,
+      signing: { sign: () => Buffer.alloc(16, 0xab) },
+    });
+    await new Promise((r) => setImmediate(r));
+
+    expect(captured).not.toBeNull();
+    const flags = captured!.readUInt32LE(16);
+    expect(flags & HeaderFlag.SIGNED).toBe(HeaderFlag.SIGNED);
+    // Signature field has been written by Connection.send().
+    const sigSlice = captured!.subarray(48, 64);
+    expect(sigSlice.every((b) => b === 0xab)).toBe(true);
   });
 });
