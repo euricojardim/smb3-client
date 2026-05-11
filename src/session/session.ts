@@ -29,6 +29,7 @@ export interface SessionCreds {
 }
 
 export type EncryptionMode = "required" | "if-offered" | "disabled";
+export type SigningMode = "disabled" | "if-offered" | "required";
 
 function pickCipher(offered: number[], preferred: number[]): number | undefined {
   for (const c of preferred) {
@@ -49,14 +50,16 @@ export class Session {
   globalEncrypt = false;
   private closed = false;
   private readonly mode: EncryptionMode;
+  private readonly signingMode: SigningMode;
   private readonly preferredCiphers: number[];
 
   constructor(
     private readonly conn: Connection,
     private readonly creds: SessionCreds,
-    opts: { encryption?: EncryptionMode; ciphers?: number[] } = {},
+    opts: { encryption?: EncryptionMode; ciphers?: number[]; signing?: SigningMode } = {},
   ) {
     this.mode = opts.encryption ?? "if-offered";
+    this.signingMode = opts.signing ?? "if-offered";
     this.preferredCiphers = opts.ciphers ?? [
       Cipher.AES_128_GCM,
       Cipher.AES_128_CCM,

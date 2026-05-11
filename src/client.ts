@@ -52,6 +52,7 @@ export class Client {
     });
     this.conn = new Connection(transport);
     const encryption = this.opts.encryption ?? "if-offered";
+    const signing = this.opts.signing ?? "if-offered";
     const ciphers =
       encryption === "disabled"
         ? []
@@ -68,7 +69,7 @@ export class Client {
         password: this.opts.password,
         domain: this.opts.domain ?? "",
       },
-      { encryption, ciphers },
+      { encryption, ciphers, signing },
     );
     await this.session.setup();
     this.state = "connected";
