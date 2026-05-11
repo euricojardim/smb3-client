@@ -91,14 +91,12 @@ describe("Connection inbound enforcement — signing required", () => {
     injectNegotiated(conn);
     conn.setSigningRequired(true);
 
-    const onClose = new Promise<void>((resolve) => conn.once("close", resolve));
     const failures: unknown[] = [];
     // Send a request so there's a pending entry, then dispatch the bad response.
     const pending = conn.send(SmbCommand.READ, Buffer.alloc(0), { sessionId: 1n }).catch((e) => failures.push(e));
     await new Promise((r) => setImmediate(r));
     ft.emit("message", plaintextFrame(SmbCommand.READ, 0n));
     await pending;
-    await Promise.race([onClose, new Promise((r) => setTimeout(r, 50))]);
 
     expect(failures.length).toBeGreaterThan(0);
     expect((failures[0] as Error).message).toMatch(/signing.*required|unsigned/i);
