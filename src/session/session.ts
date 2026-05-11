@@ -73,6 +73,18 @@ export class Session {
     if (!negotiated) throw new Error("Session.setup: connection not negotiated");
     const dialect = negotiated.dialect;
 
+    // If the user explicitly opted out of signing but the server demands it,
+    // fail loudly rather than silently sending signed frames or failing later.
+    if (
+      this.signingMode === "disabled" &&
+      (negotiated.securityMode & SecurityMode.SIGNING_REQUIRED) !== 0
+    ) {
+      throw new SmbAuthError({
+        status: 0,
+        message: "server requires signing, but client has signing disabled",
+      });
+    }
+
     // First leg: send NTLMSSP NEGOTIATE wrapped in SPNEGO NegTokenInit.
     const ntlmNeg = encodeNegotiateMessage();
     const blob1 = wrapInitNegToken(ntlmNeg);

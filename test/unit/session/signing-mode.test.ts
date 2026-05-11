@@ -3,7 +3,8 @@ import { FakeTransport } from "../../helpers/fakeTransport.js";
 import { Connection } from "../../../src/connection/connection.js";
 import { Session, type SigningMode } from "../../../src/session/session.js";
 import { Client } from "../../../src/client.js";
-import { SecurityMode } from "../../../src/wire/commands.js";
+import { SecurityMode, Dialect } from "../../../src/wire/commands.js";
+import { SmbAuthError } from "../../../src/errors.js";
 
 describe("Session signing mode plumbing", () => {
   it("accepts a SigningMode in the constructor opts and exposes it via a typed export", () => {
@@ -86,5 +87,53 @@ describe("NEGOTIATE SecurityMode advertisement", () => {
     const sm = await captureFirstFrame("required");
     expect(sm & SecurityMode.SIGNING_REQUIRED).toBe(SecurityMode.SIGNING_REQUIRED);
     expect(sm & SecurityMode.SIGNING_ENABLED).toBe(SecurityMode.SIGNING_ENABLED);
+  });
+});
+
+describe("Session setup with signing=disabled vs server demands signing", () => {
+  it("throws SmbAuthError when server NEGOTIATE response has SIGNING_REQUIRED bit", async () => {
+    const ft = new FakeTransport();
+    const conn = new Connection(ft);
+    // Inject a negotiated state with SIGNING_REQUIRED set by the server.
+    (conn as unknown as { negotiated: unknown }).negotiated = {
+      dialect: Dialect.SMB_3_1_1,
+      serverGuid: Buffer.alloc(16),
+      capabilities: 0,
+      securityMode: SecurityMode.SIGNING_ENABLED | SecurityMode.SIGNING_REQUIRED,
+      maxReadSize: 65536,
+      maxWriteSize: 65536,
+      maxTransactSize: 65536,
+      securityBuffer: Buffer.alloc(0),
+    };
+    const s = new Session(
+      conn,
+      { username: "u", password: "p", domain: "" },
+      { signing: "disabled" },
+    );
+    await expect(s.setup()).rejects.toBeInstanceOf(SmbAuthError);
+    await expect(s.setup()).rejects.toThrow(/signing/i);
+  });
+
+  it("does NOT throw on server SIGNING_REQUIRED when mode is \"if-offered\" or \"required\"", async () => {
+    // Just confirm we don't gate this on those modes — they should proceed past
+    // the check and fail later for a different reason (no transport).
+    for (const m of ["if-offered", "required"] as const) {
+      const ft = new FakeTransport();
+      const conn = new Connection(ft);
+      (conn as unknown as { negotiated: unknown }).negotiated = {
+        dialect: Dialect.SMB_3_1_1,
+        serverGuid: Buffer.alloc(16),
+        capabilities: 0,
+        securityMode: SecurityMode.SIGNING_ENABLED | SecurityMode.SIGNING_REQUIRED,
+        maxReadSize: 65536, maxWriteSize: 65536, maxTransactSize: 65536,
+        securityBuffer: Buffer.alloc(0),
+      };
+      const s = new Session(conn, { username: "u", password: "p", domain: "" }, { signing: m });
+      // We expect a different failure (connection closed) — not the signing-mode rejection.
+      const setupPromise = s.setup();
+      // Close the transport so the pending SESSION_SETUP send rejects rather than hanging.
+      ft.close();
+      await expect(setupPromise).rejects.not.toThrow(/signing.*disabled/i);
+    }
   });
 });
