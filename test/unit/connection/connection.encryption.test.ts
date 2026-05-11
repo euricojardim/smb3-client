@@ -289,8 +289,8 @@ describe("Connection — combined signing+encryption", () => {
 
     const pending = conn.send(SmbCommand.READ, Buffer.alloc(0), { sessionId, encrypt: true });
     await new Promise((r) => setImmediate(r));
-    ft.emit("message", transportFrame);
-    await expect(pending).resolves.toBeDefined();
+    ft.deliver(transportFrame);
+    await expect(pending).resolves.toMatchObject({ header: { command: SmbCommand.READ } });
   });
 
   it("under signingRequired=true + encryption installed: rejects unsigned plaintext frames", async () => {
@@ -311,11 +311,12 @@ describe("Connection — combined signing+encryption", () => {
     const failures: unknown[] = [];
     const pending = conn.send(SmbCommand.READ, Buffer.alloc(0), { sessionId: 1n }).catch((e) => failures.push(e));
     await new Promise((r) => setImmediate(r));
-    ft.emit("message", plaintextFrame);
+    ft.deliver(plaintextFrame);
     await pending;
     expect(failures.length).toBeGreaterThan(0);
-    // Either the encryption-required or the signing-required check can fire here.
-    // What matters is the connection rejected the frame.
-    expect((failures[0] as Error).message).toMatch(/plaintext|signing.*required|unsigned/i);
+    // With both encryptionRequired and signingRequired set, the encryption check
+    // in Connection.onMessage fires first (per source order). That's the message
+    // we'll see — assert it directly rather than vaguely matching either guard.
+    expect((failures[0] as Error).message).toMatch(/plaintext.*encryption/i);
   });
 });
