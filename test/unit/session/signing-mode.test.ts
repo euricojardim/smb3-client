@@ -203,3 +203,54 @@ describe("Session.applyCancelSigner() vs signing mode", () => {
     expect(cancelSignerSet).toBe(true);
   });
 });
+
+describe("Session wires signingRequired into Connection based on mode", () => {
+  function buildConnInPostNegotiate(): Connection {
+    const ft = new FakeTransport();
+    const conn = new Connection(ft);
+    (conn as unknown as { negotiated: unknown }).negotiated = {
+      dialect: Dialect.SMB_3_1_1,
+      serverGuid: Buffer.alloc(16),
+      capabilities: 0,
+      securityMode: SecurityMode.SIGNING_ENABLED,
+      maxReadSize: 65536, maxWriteSize: 65536, maxTransactSize: 65536,
+      securityBuffer: Buffer.alloc(0),
+    };
+    return conn;
+  }
+
+  // The wiring lives after key derivation in setup(). We can't reach it without
+  // a real server, so we call the test-only helper `applySigningMode()` that
+  // setup() delegates to. The helper makes the wiring observable in unit tests
+  // and is invoked unchanged from setup().
+
+  it("calls conn.setSigningRequired(true) when signingMode is \"required\"", () => {
+    const conn = buildConnInPostNegotiate();
+    const seen: boolean[] = [];
+    const orig = conn.setSigningRequired.bind(conn);
+    conn.setSigningRequired = (v) => { seen.push(v); orig(v); };
+    const s = new Session(conn, { username: "u", password: "p", domain: "" }, { signing: "required" });
+    (s as unknown as { applySigningMode(): void }).applySigningMode();
+    expect(seen).toEqual([true]);
+  });
+
+  it("calls conn.setSigningRequired(false) when signingMode is \"if-offered\"", () => {
+    const conn = buildConnInPostNegotiate();
+    const seen: boolean[] = [];
+    const orig = conn.setSigningRequired.bind(conn);
+    conn.setSigningRequired = (v) => { seen.push(v); orig(v); };
+    const s = new Session(conn, { username: "u", password: "p", domain: "" }, { signing: "if-offered" });
+    (s as unknown as { applySigningMode(): void }).applySigningMode();
+    expect(seen).toEqual([false]);
+  });
+
+  it("calls conn.setSigningRequired(false) when signingMode is \"disabled\"", () => {
+    const conn = buildConnInPostNegotiate();
+    const seen: boolean[] = [];
+    const orig = conn.setSigningRequired.bind(conn);
+    conn.setSigningRequired = (v) => { seen.push(v); orig(v); };
+    const s = new Session(conn, { username: "u", password: "p", domain: "" }, { signing: "disabled" });
+    (s as unknown as { applySigningMode(): void }).applySigningMode();
+    expect(seen).toEqual([false]);
+  });
+});

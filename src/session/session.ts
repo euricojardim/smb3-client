@@ -187,6 +187,7 @@ export class Session {
     const signingKey = this.signingKey!;
     this.conn.setVerifier((frame, sig) => verify(frame, sig, signingKey, dialect));
     this.applyCancelSigner();
+    this.applySigningMode();
 
     // SMB 3.x message encryption (MS-SMB2 §3.1.4.3 / §3.2.4.1.5).
     if (this.mode !== "disabled" && this.dialectSupportsEncryption(dialect)) {
@@ -305,6 +306,10 @@ export class Session {
     return {
       sign: (msg: Buffer): Buffer => sign(msg, key, dialect),
     };
+  }
+
+  private applySigningMode(): void {
+    this.conn.setSigningRequired(this.signingMode === "required");
   }
 
   /**
