@@ -169,32 +169,37 @@ describe("Session.makeSigning() vs signing mode", () => {
   });
 });
 
-describe("Session does not register cancel-signer when signing=disabled", () => {
-  it("conn.signCancel stays null after setup() with signing=disabled", async () => {
+describe("Session.applyCancelSigner() vs signing mode", () => {
+  function buildSession(mode: "disabled" | "if-offered" | "required") {
     const ft = new FakeTransport();
     const conn = new Connection(ft);
-    (conn as unknown as { negotiated: unknown }).negotiated = {
-      dialect: Dialect.SMB_3_1_1,
-      serverGuid: Buffer.alloc(16),
-      capabilities: 0,
-      securityMode: SecurityMode.SIGNING_ENABLED,
-      maxReadSize: 65536, maxWriteSize: 65536, maxTransactSize: 65536,
-      securityBuffer: Buffer.alloc(0),
-    };
-    const s = new Session(conn, { username: "u", password: "p", domain: "" }, { signing: "disabled" });
-    // Track whether setCancelSigner is ever called.
-    let cancelSignerSet = false;
-    const orig = conn.setCancelSigner.bind(conn);
-    conn.setCancelSigner = (fn) => { cancelSignerSet = true; orig(fn); };
-
-    // Fully driving setup() requires a server; instead, exercise the conditional
-    // by calling the same logic path. Inject signingKey + dialect, then invoke
-    // a tiny helper that mirrors the wiring code in setup().
+    (conn as unknown as { negotiated: unknown }).negotiated = { dialect: Dialect.SMB_3_1_1 };
+    const s = new Session(conn, { username: "u", password: "p", domain: "" }, { signing: mode });
     (s as unknown as { signingKey: Buffer }).signingKey = Buffer.alloc(16, 0x55);
-    // Manually replicate the post-key-derivation wiring for the test:
-    if ((s as unknown as { signingMode: string }).signingMode !== "disabled") {
-      conn.setCancelSigner(() => Buffer.alloc(16));
-    }
+    return { s, conn };
+  }
+
+  it("does NOT register a cancel signer when signingMode is \"disabled\"", () => {
+    const { s, conn } = buildSession("disabled");
+    let cancelSignerSet = false;
+    conn.setCancelSigner = () => { cancelSignerSet = true; };
+    (s as unknown as { applyCancelSigner(): void }).applyCancelSigner();
     expect(cancelSignerSet).toBe(false);
+  });
+
+  it("registers a cancel signer when signingMode is \"if-offered\"", () => {
+    const { s, conn } = buildSession("if-offered");
+    let cancelSignerSet = false;
+    conn.setCancelSigner = () => { cancelSignerSet = true; };
+    (s as unknown as { applyCancelSigner(): void }).applyCancelSigner();
+    expect(cancelSignerSet).toBe(true);
+  });
+
+  it("registers a cancel signer when signingMode is \"required\"", () => {
+    const { s, conn } = buildSession("required");
+    let cancelSignerSet = false;
+    conn.setCancelSigner = () => { cancelSignerSet = true; };
+    (s as unknown as { applyCancelSigner(): void }).applyCancelSigner();
+    expect(cancelSignerSet).toBe(true);
   });
 });
