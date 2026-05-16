@@ -99,10 +99,28 @@ const client = new Client({
   password: "s3cr3t",       // required
   connectTimeout: 10_000,   // ms, default 10 000
   requestTimeout: 30_000,   // ms, default 30 000
-  signing: "if-offered",    // "required" | "if-offered" (default "if-offered")
-  encryption: "if-offered", // "required" | "if-offered" | "disabled" (default "if-offered")
+  signing: "if-offered",    // "disabled" | "if-offered" | "required" (default "if-offered")
+  encryption: "if-offered", // "disabled" | "if-offered" | "required" (default "if-offered")
 });
 ```
+
+**`signing` and `encryption` semantics:**
+
+- `"disabled"` — opt out. The client will not sign (or encrypt) outgoing
+  messages. Setup fails fast if the server's NEGOTIATE response demands the
+  capability the client is disabling.
+- `"if-offered"` *(default)* — opportunistic. The client signs/encrypts when
+  the server agrees, otherwise proceeds without.
+- `"required"` — demanded. The client refuses to proceed if the server can't
+  honor the requirement, and rejects post-handshake responses that violate it.
+  For signing, the requirement is also advertised in NEGOTIATE via the
+  `SMB2_NEGOTIATE_SIGNING_REQUIRED` security-mode bit; for encryption the
+  enforcement is at session-setup time (no supported cipher offered → error).
+
+`signing: "required"` accepts encrypted responses as satisfying the requirement
+(per MS-SMB2 §3.1.4.3, an encrypted message's inner signature is zero).
+Combining `signing: "required"` with `encryption: "required"` is supported and
+gives both confidentiality and integrity on every post-handshake message.
 
 ### `connect(): Promise<void>`
 

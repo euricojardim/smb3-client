@@ -85,6 +85,17 @@ current implementation matter for security review:
   (e.g. the dialect is 2.x, or a 3.x server doesn't offer encryption). Use
   this in environments where plaintext SMB is unacceptable.
 
+### Disabling signing or encryption
+
+`ClientOptions.signing` and `ClientOptions.encryption` both accept
+`"disabled"`. These exist for test environments and for interop with servers
+that don't support either feature. Setting both to `"disabled"` produces
+unauthenticated, unencrypted SMB traffic and should not be used against
+production servers. Windows Server 2019 and later require signing by default; expect setup to fail
+against those servers when `signing: "disabled"` is set. Samba's default
+(`server signing = auto`) offers but does not require signing, so a connection
+with signing disabled will succeed against a default Samba server.
+
 ### Cryptographic primitives
 
 - All crypto uses Node's `node:crypto` (HMAC-SHA256, AES-128-CMAC built on

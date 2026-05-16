@@ -29,6 +29,7 @@ export interface SessionCreds {
 }
 
 export type EncryptionMode = "required" | "if-offered" | "disabled";
+export type SigningMode = "disabled" | "if-offered" | "required";
 
 function pickCipher(offered: number[], preferred: number[]): number | undefined {
   for (const c of preferred) {
@@ -49,14 +50,16 @@ export class Session {
   globalEncrypt = false;
   private closed = false;
   private readonly mode: EncryptionMode;
+  private readonly signingMode: SigningMode;
   private readonly preferredCiphers: number[];
 
   constructor(
     private readonly conn: Connection,
     private readonly creds: SessionCreds,
-    opts: { encryption?: EncryptionMode; ciphers?: number[] } = {},
+    opts: { encryption?: EncryptionMode; ciphers?: number[]; signing?: SigningMode } = {},
   ) {
     this.mode = opts.encryption ?? "if-offered";
+    this.signingMode = opts.signing ?? "if-offered";
     this.preferredCiphers = opts.ciphers ?? [
       Cipher.AES_128_GCM,
       Cipher.AES_128_CCM,
@@ -69,6 +72,18 @@ export class Session {
     const negotiated = this.conn.state;
     if (!negotiated) throw new Error("Session.setup: connection not negotiated");
     const dialect = negotiated.dialect;
+
+    // If the user explicitly opted out of signing but the server demands it,
+    // fail loudly rather than silently sending signed frames or failing later.
+    if (
+      this.signingMode === "disabled" &&
+      (negotiated.securityMode & SecurityMode.SIGNING_REQUIRED) !== 0
+    ) {
+      throw new SmbAuthError({
+        status: 0,
+        message: "server requires signing, but client has signing disabled",
+      });
+    }
 
     // First leg: send NTLMSSP NEGOTIATE wrapped in SPNEGO NegTokenInit.
     const ntlmNeg = encodeNegotiateMessage();
@@ -171,8 +186,8 @@ export class Session {
     // Register the verifier on the connection so every subsequent signed response is checked.
     const signingKey = this.signingKey!;
     this.conn.setVerifier((frame, sig) => verify(frame, sig, signingKey, dialect));
-    // Register the cancel signer so CANCEL frames are signed per MS-SMB2 §3.2.4.24.
-    this.conn.setCancelSigner((msg) => sign(msg, signingKey, dialect));
+    this.applyCancelSigner();
+    this.applySigningMode();
 
     // SMB 3.x message encryption (MS-SMB2 §3.1.4.3 / §3.2.4.1.5).
     if (this.mode !== "disabled" && this.dialectSupportsEncryption(dialect)) {
@@ -284,11 +299,30 @@ export class Session {
   }
 
   makeSigning(): { sign: (msg: Buffer) => Buffer } | undefined {
+    if (this.signingMode === "disabled") return undefined;
     const key = this.signingKey;
     const dialect = this.conn.state?.dialect;
     if (!key || !dialect) return undefined;
     return {
       sign: (msg: Buffer): Buffer => sign(msg, key, dialect),
     };
+  }
+
+  private applySigningMode(): void {
+    this.conn.setSigningRequired(this.signingMode === "required");
+  }
+
+  /**
+   * Registers a CANCEL frame signer on the Connection unless signing is disabled.
+   * Under `signing: "disabled"`, the Connection's CANCEL path stays null-safe and
+   * cancellations go out unsigned — consistent with MS-SMB2 §3.2.4.24 only when
+   * the session never agreed to sign in the first place.
+   */
+  private applyCancelSigner(): void {
+    if (this.signingMode === "disabled") return;
+    const key = this.signingKey;
+    const dialect = this.conn.state?.dialect;
+    if (!key || dialect === undefined) return;
+    this.conn.setCancelSigner((msg) => sign(msg, key, dialect));
   }
 }

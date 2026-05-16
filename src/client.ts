@@ -22,7 +22,7 @@ import { splitSharePath, toSmbPath } from "./paths.js";
 import type { ClientOptions, Dirent, FileStat, ChangeEvent, ShareInfo } from "./types.js";
 import { encodeSetInfoRequest, encodeFileRenameInformation } from "./wire/structs/setInfo.js";
 import { InfoType, FileInformationClass } from "./wire/structs/queryInfo.js";
-import { SmbCommand, Cipher, Capability, isSuccess, statusName } from "./wire/commands.js";
+import { SmbCommand, Cipher, Capability, SecurityMode, isSuccess, statusName } from "./wire/commands.js";
 import { SmbError } from "./errors.js";
 import { encodeWriteRequest, decodeWriteResponse } from "./wire/structs/write.js";
 import { encodeReadRequest, decodeReadResponse } from "./wire/structs/read.js";
@@ -52,6 +52,7 @@ export class Client {
     });
     this.conn = new Connection(transport);
     const encryption = this.opts.encryption ?? "if-offered";
+    const signing = this.opts.signing ?? "if-offered";
     const ciphers =
       encryption === "disabled"
         ? []
@@ -60,7 +61,11 @@ export class Client {
     // which don't use the EncryptionCapabilities negotiate context.
     const capabilities =
       ciphers.length > 0 ? Capability.LARGE_MTU | Capability.ENCRYPTION : Capability.LARGE_MTU;
-    await this.conn.open({ ciphers, capabilities });
+    const securityMode =
+      signing === "required"
+        ? SecurityMode.SIGNING_ENABLED | SecurityMode.SIGNING_REQUIRED
+        : SecurityMode.SIGNING_ENABLED;
+    await this.conn.open({ ciphers, capabilities, securityMode });
     this.session = new Session(
       this.conn,
       {
@@ -68,7 +73,7 @@ export class Client {
         password: this.opts.password,
         domain: this.opts.domain ?? "",
       },
-      { encryption, ciphers },
+      { encryption, ciphers, signing },
     );
     await this.session.setup();
     this.state = "connected";

@@ -73,6 +73,7 @@ export class Connection extends EventEmitter {
   private signCancel: ((msg: Buffer) => Buffer) | null = null;
   private encryptor: Encryptor | null = null;
   private encryptionRequired = false;
+  private signingRequired = false;
 
   constructor(private readonly transport: Transport) {
     super();
@@ -210,6 +211,11 @@ export class Connection extends EventEmitter {
     this.encryptionRequired = v;
   }
 
+  /** When true, post-handshake plaintext-unsigned responses cause a fatal protocol error. */
+  setSigningRequired(v: boolean): void {
+    this.signingRequired = v;
+  }
+
   private onMessage(raw: Buffer): void {
     let msg = raw;
     let wasEncrypted = false;
@@ -245,6 +251,24 @@ export class Connection extends EventEmitter {
       this.fail(new SmbProtocolError({
         status: 0,
         message: "plaintext response received but session requires encryption",
+      }));
+      return;
+    }
+
+    // MS-SMB2: when signing=required, every post-handshake frame must be either
+    // signed (HeaderFlag.SIGNED set, signature verified above) or encrypted.
+    // Pre-auth frames (NEGOTIATE, the first SESSION_SETUP) are exempt — they
+    // can't be signed yet (no key) and can't be encrypted (no cipher negotiated).
+    if (
+      !wasEncrypted &&
+      this.signingRequired &&
+      header.command !== SmbCommand.NEGOTIATE &&
+      header.command !== SmbCommand.SESSION_SETUP &&
+      (header.flags & HeaderFlag.SIGNED) === 0
+    ) {
+      this.fail(new SmbProtocolError({
+        status: 0,
+        message: "unsigned response received but signing is required",
       }));
       return;
     }
