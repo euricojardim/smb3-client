@@ -62,3 +62,30 @@ describe("readdirAll", () => {
     expect(items.map((x) => x.fileName)).toEqual(["a.txt", "b.txt", "c.txt"]);
   });
 });
+
+describe("readdirAll continuation", () => {
+  it("sends the search pattern on every QUERY_DIRECTORY, not only the first", async () => {
+    const ft = new FakeTransport();
+    const nameLengths: number[] = [];
+    let call = 0;
+    ft.onSend((frame) => {
+      const smb = frame.subarray(4);
+      if (smb.readUInt16LE(12) !== SmbCommand.QUERY_DIRECTORY) return;
+      const messageId = smb.readBigUInt64LE(24);
+      // QUERY_DIRECTORY request: FileNameLength at body offset 26
+      nameLengths.push(smb.readUInt16LE(64 + 26));
+      call++;
+      if (call === 1) ft.deliver(qdResp(messageId, 0, dirEntry("a.txt", true)));
+      else ft.deliver(qdResp(messageId, NTStatus.STATUS_NO_MORE_FILES, Buffer.alloc(0)));
+    });
+    const conn = new Connection(ft);
+    (conn as unknown as { negotiated: unknown }).negotiated = { dialect: Dialect.SMB_3_1_1 };
+    const tree = Object.assign(Object.create(Tree.prototype), {
+      conn, session: { sessionId: 0xabcdn, makeSigning: () => undefined },
+      treeId: 0x42, shareType: "disk", path: "x", maximalAccess: 0,
+    }) as Tree;
+    const open = new (Open as unknown as { new (...a: unknown[]): Open })(tree, Buffer.alloc(16, 0xfe), {} as never);
+    await readdirAll(open);
+    expect(nameLengths).toEqual([2, 2]); // "*" in UTF-16LE, both times
+  });
+});

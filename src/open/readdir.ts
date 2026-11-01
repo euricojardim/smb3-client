@@ -19,7 +19,9 @@ export async function readdirAll(open: Open, pattern = "*"): Promise<DirEntry[]>
       flags: first ? QueryDirectoryFlag.RESTART_SCANS : 0,
       fileIndex: 0,
       fileId: open.fileId,
-      searchPattern: first ? pattern : "",
+      // Every call carries the pattern: Samba answers an empty one with
+      // STATUS_OBJECT_NAME_INVALID, and Windows accepts it either way.
+      searchPattern: pattern,
       outputBufferLength: 65536,
     });
     first = false;
