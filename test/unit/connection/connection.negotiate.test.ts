@@ -64,3 +64,19 @@ describe("Connection.open (negotiate)", () => {
     expect(result.preauthSalt?.length).toBe(32);
   });
 });
+
+describe("Connection.open (credits)", () => {
+  it("counts the initial credit used by NEGOTIATE", async () => {
+    const ft = new FakeTransport();
+    ft.onSend((frame) => {
+      const smb = frame.subarray(4);
+      ft.deliver(buildNegotiateResponseFrame(smb.readBigUInt64LE(24)));
+    });
+    const conn = new Connection(ft);
+    await conn.open();
+    // The server granted one credit in its response, and the one the connection
+    // started with went to NEGOTIATE: one left, as the server sees it.
+    const credits = (conn as unknown as { credits: { available(): number } }).credits;
+    expect(credits.available()).toBe(1);
+  });
+});

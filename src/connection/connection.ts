@@ -103,6 +103,11 @@ export class Connection extends EventEmitter {
       preauthSalt,
       ...(opts.ciphers !== undefined ? { ciphers: opts.ciphers } : {}),
     });
+    // NEGOTIATE goes out with CreditCharge 0, but its message id still uses the one
+    // credit every connection starts with (MS-SMB2 §3.2.4.1.2): count it, or the window
+    // runs one ahead of the server's and a strict server (Samba) drops the connection
+    // with "client used more credits than granted" once requests overlap.
+    await this.credits.take(1);
     const result = await this.send(SmbCommand.NEGOTIATE, reqBody, { creditCharge: 0 });
     if (!isSuccess(result.header.status)) {
       throw new SmbProtocolError({
