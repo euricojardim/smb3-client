@@ -15,9 +15,12 @@ export function createReadStream(open: Open, opts: ReadStreamOptions = {}): Read
   if (totalEnd < start) {
     return Readable.from([], { objectMode: false });
   }
+  // One READ per chunk: readAt() splits anything bigger than 64 KiB into sequential
+  // reads, so bigger chunks only delay the first bytes and make progress jumpy.
+  // Throughput comes from several reads in flight instead.
   const max = open.tree.conn.state?.maxReadSize ?? 65536;
-  const chunkSize = Math.min(max, opts.highWaterMark ?? max);
-  const concurrency = Math.max(1, Math.min(opts.concurrency ?? 4, 8));
+  const chunkSize = Math.min(max, opts.highWaterMark ?? max, 65536);
+  const concurrency = Math.max(1, Math.min(opts.concurrency ?? 8, 16));
 
   let nextOffset = start;
   let outOffset = start; // next offset we may push
