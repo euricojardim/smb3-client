@@ -13,6 +13,10 @@ export class TcpTransport extends EventEmitter implements Transport {
 
   constructor(private readonly socket: Socket) {
     super();
+    // A server that vanished (no FIN) is found by TCP keep-alive; a timeout on the socket
+    // would also cut long CHANGE_NOTIFY waits, which are idle by design
+    socket.setKeepAlive(true, 30_000);
+    socket.setNoDelay(true);
     socket.on("data", (chunk) => {
       this.reader.feed(chunk);
       let m: Buffer | null;

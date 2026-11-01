@@ -12,6 +12,11 @@ export function splitSharePath(p: string): { share: string; rest: string } {
   if (parts.some((x) => x === "..")) {
     throw new SmbError({ status: NTStatus.STATUS_INVALID_PARAMETER, message: "path contains .." });
   }
+  // toSmbPath() keeps backslashes, which the server reads as separators: "a\..\b" would
+  // walk up the tree past the ".." check above
+  if (parts.some((x) => x.includes("\\"))) {
+    throw new SmbError({ status: NTStatus.STATUS_INVALID_PARAMETER, message: "path contains a backslash" });
+  }
   if (parts.length === 0) {
     throw new SmbError({ status: NTStatus.STATUS_INVALID_PARAMETER, message: "empty share" });
   }

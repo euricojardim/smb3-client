@@ -14,6 +14,11 @@ describe("paths", () => {
     expect(() => splitSharePath("")).toThrow();
   });
 
+  it("rejects backslashes inside a part (they would be separators on the server)", () => {
+    expect(() => splitSharePath("public/a\\..\\secret.txt")).toThrow();
+    expect(() => splitSharePath("public/..\\x")).toThrow();
+  });
+
   it("toSmbPath converts forward slashes to backslashes and strips leading", () => {
     expect(toSmbPath("dir/sub/file.txt")).toBe("dir\\sub\\file.txt");
     expect(toSmbPath("")).toBe("");
