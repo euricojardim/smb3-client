@@ -19,7 +19,8 @@ import {
   ShareAccess,
 } from "./wire/structs/create.js";
 import { splitSharePath, toSmbPath } from "./paths.js";
-import type { ClientOptions, Dirent, FileStat, ChangeEvent, ShareInfo } from "./types.js";
+import type { ClientOptions, Dirent, FileStat, ChangeEvent, ShareInfo, ReadStreamOptions, WriteStreamOptions } from "./types.js";
+import { smbTimeToDate } from "./paths.js";
 import { encodeSetInfoRequest, encodeFileRenameInformation } from "./wire/structs/setInfo.js";
 import { InfoType, FileInformationClass } from "./wire/structs/queryInfo.js";
 import { SmbCommand, Cipher, Capability, SecurityMode, isSuccess, statusName } from "./wire/commands.js";
@@ -142,6 +143,8 @@ export class Client {
           name: e.fileName,
           isFile: () => !isDir,
           isDirectory: () => isDir,
+          size: isDir ? 0 : Number(e.endOfFile),
+          mtime: smbTimeToDate(e.lastWriteTime),
         } satisfies Dirent;
       });
     });
@@ -263,10 +266,11 @@ export class Client {
     }
   }
 
-  createReadStream(path: string): Readable {
+  createReadStream(path: string, opts: ReadStreamOptions = {}): Readable {
     const out = new PassThrough();
+    const start = checkStart(opts.start);
 
-    void this._beginReadStream(path, {
+    void this._beginReadStream(path, start, {
       onReady: (inner) => {
         inner.pipe(out);
         inner.on("error", (e) => out.destroy(e));
@@ -280,6 +284,7 @@ export class Client {
 
   private async _beginReadStream(
     path: string,
+    start: bigint,
     cbs: { onReady: (s: Readable) => void; onError: (err: Error) => void },
   ): Promise<void> {
     try {
@@ -293,7 +298,7 @@ export class Client {
         createOptions: CreateOptions.NON_DIRECTORY_FILE,
         fileAttributes: 0,
       });
-      const inner = openCreateReadStream(open);
+      const inner = openCreateReadStream(open, { start });
       inner.on("end", async () => { try { await open.close(); } catch { /* ignore */ } });
       inner.on("error", () => { open.close().catch(() => undefined); });
       cbs.onReady(inner);
@@ -302,7 +307,8 @@ export class Client {
     }
   }
 
-  createWriteStream(path: string): Writable {
+  createWriteStream(path: string, opts: WriteStreamOptions = {}): Writable {
+    const start = checkStart(opts.start);
     type PendingWrite = { chunk: Buffer; cb: (err?: Error) => void };
     let inner: Writable | null = null;
     let connectError: Error | null = null;
@@ -330,7 +336,7 @@ export class Client {
       },
     });
 
-    void this._beginWriteStream(path, {
+    void this._beginWriteStream(path, start, {
       onReady: (i) => {
         inner = i;
         // Drain pending writes in order, then handle pendingFinal
@@ -367,6 +373,7 @@ export class Client {
 
   private async _beginWriteStream(
     path: string,
+    start: bigint,
     cbs: { onReady: (s: Writable) => void; onError: (err: Error) => void },
   ): Promise<void> {
     try {
@@ -376,11 +383,12 @@ export class Client {
         filename: toSmbPath(rest),
         desiredAccess: FileAccess.GENERIC_WRITE | FileAccess.FILE_READ_ATTRIBUTES,
         shareAccess: ShareAccess.READ | ShareAccess.WRITE | ShareAccess.DELETE,
-        createDisposition: CreateDisposition.OVERWRITE_IF,
+        // From an offset: keep what is there (resuming); from 0: a new or truncated file
+        createDisposition: start > 0n ? CreateDisposition.OPEN_IF : CreateDisposition.OVERWRITE_IF,
         createOptions: CreateOptions.NON_DIRECTORY_FILE,
         fileAttributes: 0,
       });
-      cbs.onReady(openCreateWriteStream(open));
+      cbs.onReady(openCreateWriteStream(open, { start }));
     } catch (err) {
       cbs.onError(err as Error);
     }
@@ -478,4 +486,10 @@ export class Client {
     }
     this.conn?.close();
   }
+}
+
+function checkStart(start: number | undefined): bigint {
+  if (start === undefined) return 0n;
+  if (!Number.isSafeInteger(start) || start < 0) throw new RangeError(`invalid start offset: ${start}`);
+  return BigInt(start);
 }
