@@ -102,6 +102,33 @@ describe("Connection inbound enforcement — signing required", () => {
     expect((failures[0] as Error).message).toMatch(/signing.*required|unsigned/i);
   });
 
+  it("accepts an unsigned interim STATUS_PENDING response, then still requires the final one signed", async () => {
+    const ft = new FakeTransport();
+    const conn = new Connection(ft);
+    injectNegotiated(conn);
+    conn.setSigningRequired(true);
+
+    const failures: unknown[] = [];
+    const pending = conn.send(SmbCommand.WRITE, Buffer.alloc(0), { sessionId: 1n }).catch((e) => failures.push(e));
+    await new Promise((r) => setImmediate(r));
+    const interim = encodeHeader({
+      command: SmbCommand.WRITE, creditCharge: 1, creditRequestResponse: 1,
+      flags: HeaderFlag.ASYNC_COMMAND | 0x1, messageId: 0n, asyncId: 7n, sessionId: 1n, status: 0x103,
+    });
+    ft.emit("message", Buffer.concat([interim, Buffer.alloc(9)]));
+    await new Promise((r) => setImmediate(r));
+    expect(failures.length).toBe(0);   // the interim answer is not a reason to drop the connection
+
+    const final = encodeHeader({
+      command: SmbCommand.WRITE, creditCharge: 1, creditRequestResponse: 1,
+      flags: HeaderFlag.ASYNC_COMMAND | 0x1, messageId: 0n, asyncId: 7n, sessionId: 1n, status: 0,
+    });
+    ft.emit("message", Buffer.concat([final, Buffer.alloc(16)]));
+    await pending;
+    expect(failures.length).toBeGreaterThan(0);   // the final one, unsigned, is still refused
+    expect((failures[0] as Error).message).toMatch(/signing.*required|unsigned/i);
+  });
+
   it("accepts a plaintext NEGOTIATE response when signingRequired is true (pre-auth exemption)", async () => {
     const ft = new FakeTransport();
     const conn = new Connection(ft);
