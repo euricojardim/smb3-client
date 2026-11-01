@@ -64,3 +64,64 @@ describe("Connection.open (negotiate)", () => {
     expect(result.preauthSalt?.length).toBe(32);
   });
 });
+
+describe("Connection.open (credits)", () => {
+  it("counts the initial credit used by NEGOTIATE", async () => {
+    const ft = new FakeTransport();
+    ft.onSend((frame) => {
+      const smb = frame.subarray(4);
+      ft.deliver(buildNegotiateResponseFrame(smb.readBigUInt64LE(24)));
+    });
+    const conn = new Connection(ft);
+    await conn.open();
+    // The server granted one credit in its response, and the one the connection
+    // started with went to NEGOTIATE: one left, as the server sees it.
+    const credits = (conn as unknown as { credits: { available(): number } }).credits;
+    expect(credits.available()).toBe(1);
+  });
+});
+
+function buildNegotiateResponse202(messageId: bigint): Buffer {
+  const body = new Writer();
+  body.u16(65); // StructureSize
+  body.u16(1); // SecurityMode
+  body.u16(Dialect.SMB_2_0_2);
+  body.u16(0); // NegotiateContextCount (reserved before 3.1.1)
+  body.bytes(Buffer.alloc(16, 0xee));
+  body.u32(0); // Capabilities
+  body.u32(65536); body.u32(65536); body.u32(65536);
+  body.u64(0n); body.u64(0n);
+  body.u16(0); body.u16(0); // security buffer
+  body.u32(0);
+  const hdr = encodeHeader({
+    command: SmbCommand.NEGOTIATE, creditCharge: 0, creditRequestResponse: 1, flags: 0x00000001,
+    messageId, sessionId: 0n, treeId: 0, status: 0,
+  });
+  return Buffer.concat([hdr, body.buffer()]);
+}
+
+describe("Connection (SMB 2.0.2)", () => {
+  it("offers 2.0.2 and, once agreed, sends CreditCharge 0", async () => {
+    const ft = new FakeTransport();
+    const charges: number[] = [];
+    let offered: number[] = [];
+    ft.onSend((frame) => {
+      const smb = frame.subarray(4);
+      const command = smb.readUInt16LE(12);
+      charges.push(smb.readUInt16LE(6));
+      if (command === SmbCommand.NEGOTIATE) {
+        const count = smb.readUInt16LE(64 + 2);
+        offered = Array.from({ length: count }, (_, i) => smb.readUInt16LE(64 + 36 + i * 2));
+        ft.deliver(buildNegotiateResponse202(smb.readBigUInt64LE(24)));
+      }
+    });
+    const conn = new Connection(ft);
+    const result = await conn.open();
+    expect(offered).toContain(Dialect.SMB_2_0_2);
+    expect(result.dialect).toBe(Dialect.SMB_2_0_2);
+    void conn.send(SmbCommand.ECHO, Buffer.from([4, 0, 0, 0]), { creditCharge: 1 }).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(charges[charges.length - 1]).toBe(0);
+    conn.close();
+  });
+});
