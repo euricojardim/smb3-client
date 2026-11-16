@@ -1,14 +1,19 @@
 import { createCipheriv, createHmac, timingSafeEqual } from "node:crypto";
 import { Dialect } from "../wire/commands.js";
 
+// AES-CMAC (RFC 4493) is CBC-MAC with a tweaked last block. CBC with a zero IV over the
+// first n-1 blocks gives the same chaining value as encrypting block by block, so one
+// aes-128-cbc cipher does the whole message instead of one cipher object per 16 bytes.
+const ZERO_IV = Buffer.alloc(16);
+
 export function hmacSha256(key: Buffer, data: Buffer): Buffer {
   return createHmac("sha256", key).update(data).digest();
 }
 
-function aesEcbEncryptBlock(key: Buffer, block: Buffer): Buffer {
-  const c = createCipheriv("aes-128-ecb", key, null);
+function cbcEncrypt(key: Buffer, data: Buffer): Buffer {
+  const c = createCipheriv("aes-128-cbc", key, ZERO_IV);
   c.setAutoPadding(false);
-  return Buffer.concat([c.update(block), c.final()]);
+  return Buffer.concat([c.update(data), c.final()]);
 }
 
 function leftShift(b: Buffer): Buffer {
@@ -23,46 +28,34 @@ function leftShift(b: Buffer): Buffer {
 }
 
 function deriveSubkeys(key: Buffer): { k1: Buffer; k2: Buffer } {
-  const Rb = Buffer.alloc(16);
-  Rb[15] = 0x87;
-  const L = aesEcbEncryptBlock(key, Buffer.alloc(16));
+  // one block with a zero IV is AES-ECB of the zero block
+  const L = cbcEncrypt(key, Buffer.alloc(16));
   const k1 = leftShift(L);
-  if (L[0]! & 0x80) for (let i = 0; i < 16; i++) k1[i] = k1[i]! ^ Rb[i]!;
+  if (L[0]! & 0x80) k1[15] = k1[15]! ^ 0x87;
   const k2 = leftShift(k1);
-  if (k1[0]! & 0x80) for (let i = 0; i < 16; i++) k2[i] = k2[i]! ^ Rb[i]!;
+  if (k1[0]! & 0x80) k2[15] = k2[15]! ^ 0x87;
   return { k1, k2 };
 }
 
 export function aesCmac(key: Buffer, msg: Buffer): Buffer {
   if (key.length !== 16) throw new Error("AES-CMAC: 16-byte key required");
   const { k1, k2 } = deriveSubkeys(key);
-  const blocks = Math.ceil(msg.length / 16);
-  const lastFull = blocks > 0 && msg.length % 16 === 0;
-  const nBlocks = Math.max(blocks, 1);
+  const nBlocks = Math.max(1, Math.ceil(msg.length / 16));
+  const lastFull = msg.length > 0 && msg.length % 16 === 0;
+  const start = (nBlocks - 1) * 16;
 
-  let lastBlock: Buffer;
-  if (lastFull) {
-    lastBlock = Buffer.from(msg.subarray((nBlocks - 1) * 16, nBlocks * 16));
-    for (let i = 0; i < 16; i++) lastBlock[i] = lastBlock[i]! ^ k1[i]!;
-  } else {
-    const start = (nBlocks - 1) * 16;
-    const tail = msg.subarray(start);
-    lastBlock = Buffer.alloc(16);
-    tail.copy(lastBlock, 0);
-    lastBlock[tail.length] = 0x80;
-    for (let i = 0; i < 16; i++) lastBlock[i] = lastBlock[i]! ^ k2[i]!;
-  }
+  const lastBlock = Buffer.alloc(16);
+  msg.subarray(start).copy(lastBlock, 0);
+  if (!lastFull) lastBlock[msg.length - start] = 0x80;
+  const k = lastFull ? k1 : k2;
+  for (let i = 0; i < 16; i++) lastBlock[i] = lastBlock[i]! ^ k[i]!;
 
-  let X: Buffer = Buffer.alloc(16);
-  for (let i = 0; i < nBlocks - 1; i++) {
-    const block = msg.subarray(i * 16, i * 16 + 16);
-    const Y = Buffer.alloc(16);
-    for (let j = 0; j < 16; j++) Y[j] = X[j]! ^ block[j]!;
-    X = aesEcbEncryptBlock(key, Y);
-  }
-  const Y = Buffer.alloc(16);
-  for (let j = 0; j < 16; j++) Y[j] = X[j]! ^ lastBlock[j]!;
-  return aesEcbEncryptBlock(key, Y);
+  // CBC over the first n-1 blocks, then the tweaked last block; the MAC is the last cipher block
+  const c = createCipheriv("aes-128-cbc", key, ZERO_IV);
+  c.setAutoPadding(false);
+  c.update(msg.subarray(0, start));
+  const out = Buffer.concat([c.update(lastBlock), c.final()]);
+  return out.subarray(out.length - 16);
 }
 
 export function sign(msg: Buffer, key: Buffer, dialect: number): Buffer {
